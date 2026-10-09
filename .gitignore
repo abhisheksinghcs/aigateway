@@ -8,6 +8,17 @@ wheels/
 
 # Virtual environments
 .venv
+.env
 
 local-file/
-status.md
+
+# Azure and Kubernetes local state
+.azure/*.env
+.azure/validate-status.json
+*.kubeconfig
+kubeconfig
+
+# Local deployment outputs and secret material
+*.parameters.json
+*.secrets.yaml
+infra/main.json

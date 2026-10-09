@@ -1,0 +1,82 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/berriai/litellm-database
+  pullPolicy: IfNotPresent
+  tag: v1.90.2
+
+serviceAccount:
+  create: true
+  automount: false
+  name: litellm
+  annotations: {}
+
+podLabels:
+  azure.workload.identity/use: "true"
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: litellm
+
+service:
+  type: ClusterIP
+  port: 4000
+
+masterkeySecretName: litellm-master-key
+masterkeySecretKey: master-key
+
+proxyConfigMap:
+  create: false
+  name: litellm-config
+  key: config.yaml
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 4Gi
+
+autoscaling:
+  enabled: false
+
+db:
+  useExisting: false
+  deployStandalone: false
+
+migrationJob:
+  enabled: false
+
+redis:
+  enabled: false
+
+pdb:
+  enabled: true
+  maxUnavailable: 0
+
+livenessProbe:
+  path: /health/liveliness
+  initialDelaySeconds: 15
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 5
+
+readinessProbe:
+  path: /health/readiness
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 5
+
+terminationGracePeriodSeconds: 90
