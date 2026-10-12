@@ -75,4 +75,9 @@ helm upgrade --install "$release_name" \
   --wait \
   --timeout 10m
 
+kubectl rollout restart "deployment/$release_name" --namespace "$namespace"
+kubectl rollout status "deployment/$release_name" \
+  --namespace "$namespace" \
+  --timeout 10m
+
 unset postgres_password database_password

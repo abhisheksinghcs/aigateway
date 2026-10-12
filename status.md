@@ -1,6 +1,6 @@
 # AI Gateway Lab Status
 
-Last updated: 2026-10-12 10:39 EDT
+Last updated: 2026-10-12 11:44 EDT
 
 ## Current State
 
@@ -73,7 +73,7 @@ The approved POC is deployed and functionally verified. Azure infrastructure and
 
 - LiteLLM router logs confirmed `customer-chat` routed to `azure/o4-mini` with HTTP 200.
 - No unidentified-Azure-model cost warning remained after setting `base_model`.
-- Helm revision 7 is `deployed`; revision 6 is the pre-guardrail `1.105.0` rollback point and revision 5 is the `1.90.2` rollback point.
+- Helm revision 8 is `deployed`; revision 7 is the pre-login-hardening rollback point, revision 6 is the pre-guardrail `1.105.0` rollback point, and revision 5 is the `1.90.2` rollback point.
 - PostgreSQL is Ready and all LiteLLM migrations plus the post-migration sanity check completed.
 - Admin authentication with username `admin` and the existing master key returned HTTP 303 to `/ui/?login=success`.
 - Post-database inference returned exactly `LiteLLM gateway path verified.`
@@ -91,6 +91,9 @@ The approved POC is deployed and functionally verified. Azure infrastructure and
 - The Admin UI initially displayed `TypeError: Failed to fetch`; no request reached LiteLLM. Retrying through an active port-forward in a private browser window succeeded, confirming a stale browser/access-path issue rather than a key API failure.
 - The persistent virtual key alias is `copilot-deepwiki-mvp`. The UI created the alias without MCP object permission, so the existing key was updated by its non-secret ID through `/key/update`.
 - Read-back verification confirms the persistent key now has a dedicated object-permission record with only `mcp_servers: ["deepwiki"]`. The raw key was not read, logged, or stored in the repository.
+- Three `proxy_admin` database rows exist and two have password credentials.
+- `general_settings.disable_env_credential_login: true` is deployed. Shared `admin` plus the master key is rejected by the UI with HTTP 401, the master key remains valid for management API recovery with HTTP 200, and the user confirmed a personal `proxy_admin` email/password login succeeds.
+- Because the external LiteLLM ConfigMap does not trigger the chart checksum rollout, `scripts/deploy-litellm.sh` now explicitly restarts and waits for the deployment after Helm completes.
 
 ## Operational Notes
 

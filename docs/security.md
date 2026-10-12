@@ -10,6 +10,8 @@ Virtual keys replace use of the master key by demo applications after PostgreSQL
 
 For the proposed Agent 365 MCP guardrail, the delegated user Entra token and LiteLLM virtual key serve different purposes. The user token supplies the signed-in user context for the OBO evaluation. The virtual key grants access to the selected MCP server. See [Microsoft Agent 365 MCP Guardrail Guide](agent365-mcp-guardrail.md).
 
+Environment-credential login to the Admin UI is disabled after two database-backed `proxy_admin` users with passwords were verified and a personal administrator login succeeded. The master key remains available for authenticated management API recovery but is rejected by the UI login form.
+
 ### Downstream Authentication
 
 LiteLLM authenticates to Azure AI Services using Microsoft Entra Workload Identity:
