@@ -1,10 +1,10 @@
 # AI Gateway Lab Status
 
-Last updated: 2026-10-12 11:45 EDT
+Last updated: 2026-10-12 12:00 EDT
 
 ## Current State
 
-The approved POC is deployed and functionally verified. Azure infrastructure and LiteLLM are running in `eastus2`. PostgreSQL-backed administration and the Microsoft Agent 365 guardrail MVP are operational through a local port-forward. Public ingress is incomplete and must not be treated as ready for hosted Copilot Studio access.
+The approved POC is deployed and functionally verified. Azure infrastructure and LiteLLM are running in `eastus2`. PostgreSQL-backed administration and the Microsoft Agent 365 guardrail MVP are operational. Public, trusted HTTPS now exposes only LiteLLM's authenticated `/mcp` route; the Copilot Studio connector and final authentication pattern remain to be built.
 
 ## Azure Context
 
@@ -40,9 +40,11 @@ The approved POC is deployed and functionally verified. Azure infrastructure and
 - OCI chart digest: `sha256:9d907efc6799afb994d15add76c90ea7557d9a3348450a895ddf4eb09a812f55`
 - Multi-architecture image index digest: `sha256:60947db020b57e204823d3fbc8bb295c85be890d7c9adcc77fb4f5fc2fe410b2`
 - Replicas: one Ready pod
-- Service: `ClusterIP` on port 4000; NGINX ingress is installed but not publicly reachable
+- Service: `ClusterIP` on port 4000 behind public NGINX ingress for `/mcp` only
 - Temporary Agent 365 hostname: `57.167.155.123.nip.io`
-- Intended public path: `/v1` only; the Azure Load Balancer frontend currently times out and its certificate is not issued
+- Public MCP endpoint: `https://57.167.155.123.nip.io/mcp`
+- Public TLS: Let's Encrypt certificate Ready and valid through 2027-01-10
+- Public route boundary: `/mcp` reaches LiteLLM; `/ui` and `/v1` return ingress-level HTTP 404
 - Logical model: `customer-chat`
 - Physical backend: Azure `o4-mini` deployment in `Agent365-Teams-Agents`
 - Azure model version: `2025-04-16`
@@ -94,6 +96,14 @@ The approved POC is deployed and functionally verified. Azure infrastructure and
 - Three `proxy_admin` database rows exist and two have password credentials.
 - `general_settings.disable_env_credential_login: true` is deployed. Shared `admin` plus the master key is rejected by the UI with HTTP 401, the master key remains valid for management API recovery with HTTP 200, and the user confirmed a personal `proxy_admin` email/password login succeeds.
 - Because the external LiteLLM ConfigMap does not trigger the chart checksum rollout, `scripts/deploy-litellm.sh` now explicitly restarts and waits for the deployment after Helm completes.
+- Public-ingress diagnosis on 2026-10-12 confirmed that the AKS cluster, both nodes, both ingress-nginx controllers, the LiteLLM backend, Azure public IP, load-balancer frontend, backend pool, rules, and HTTP/HTTPS health probes are provisioned and healthy.
+- The public timeout root cause is the AKS subnet NSG `litellm-demo-vnet-snet-aks-nsg-eastus2`: its default `DenyAllInBound` applies before the AKS-managed NIC NSG, but it has no Internet allow rule for ports 80 and 443. The AKS-managed NIC NSG already has the expected public-IP-specific allow rule.
+- The existing ACME order is invalid because Let's Encrypt timed out reaching the HTTP-01 challenge through the blocked load balancer. A fresh certificate attempt is required after the subnet NSG is fixed.
+- Predeployment structured what-if found that adding the AKS subnet NSG to source would otherwise detach the existing private-endpoint-subnet NSG. The Bicep change now preserves both existing subnet NSG associations and changes only the AKS subnet NSG rules.
+- Subscription deployment `litellm-gateway-demo` completed successfully at 2026-10-12 11:58 EDT. The infrastructure-managed `AllowPublicIngressHttpHttps` subnet NSG rule is provisioned, both subnet NSG associations remain intact, and public HTTP now reaches ingress-nginx with an HTTP 308 response instead of timing out.
+- `kubernetes/public-ingress.yaml` now routes only `/mcp` and disables proxy buffering with one-hour read/send timeouts for streamable HTTP.
+- A fresh Let's Encrypt ACME order completed successfully. The certificate is Ready, the public `/mcp` endpoint returns LiteLLM's expected HTTP 401 authentication response without credentials, and public `/ui` and `/v1` requests return HTTP 404 before reaching LiteLLM.
+- Final checks passed: Bicep build/lint, shell syntax, Kubernetes client-side apply, two Ready AKS nodes, Ready LiteLLM/PostgreSQL/ingress workloads, live AKS and model RBAC, and a post-ingress `customer-chat` response of exactly `LiteLLM gateway path verified.`
 
 ## Operational Notes
 
@@ -127,14 +137,15 @@ The approved POC is deployed and functionally verified. Azure infrastructure and
 
 ## Next Step
 
-The next build item is the Copilot Studio connectivity layer:
+The next build item is the Copilot Studio connectivity layer. Public MCP ingress remediation is currently in progress:
 
-1. Repair the Azure public load-balancer path and issue a publicly trusted TLS certificate.
-2. Expose LiteLLM's streamable HTTP `/mcp` route through ingress while keeping `/ui` private. The existing incomplete ingress exposes `/v1`, which is not sufficient for Copilot Studio MCP.
-3. Build the Copilot Studio MCP connection using delegated OAuth for the gateway audience and `access_as_user`.
-4. If the two-header pattern is retained, add `x-litellm-api-key` as a connector-level secret header using the existing `copilot-deepwiki-mvp` raw key. Otherwise, enable and validate LiteLLM JWT admission before omitting the virtual-key header.
-5. Validate the hosted Copilot Studio -> HTTPS `/mcp` -> LiteLLM -> Agent 365 -> DeepWiki flow.
-6. Validate an administrator-configured Defender policy block separately; the MVP currently proves the allow path and mandatory-user-token refusal.
+1. [x] Add an infrastructure-managed subnet NSG allow rule for public HTTP/HTTPS traffic to the AKS ingress load balancer.
+2. [x] Replace the incomplete public `/v1` ingress path with LiteLLM's streamable HTTP `/mcp` route while keeping `/ui` private.
+3. [x] Deploy the Kubernetes ingress change, recreate the failed ACME issuance attempt, and verify publicly trusted HTTPS.
+4. Build the Copilot Studio MCP connection using delegated OAuth for the gateway audience and `access_as_user`.
+5. If the two-header pattern is retained, add `x-litellm-api-key` as a connector-level secret header using the existing `copilot-deepwiki-mvp` raw key. Otherwise, enable and validate LiteLLM JWT admission before omitting the virtual-key header.
+6. Validate the hosted Copilot Studio -> HTTPS `/mcp` -> LiteLLM -> Agent 365 -> DeepWiki flow.
+7. Validate an administrator-configured Defender policy block separately; the MVP currently proves the allow path and mandatory-user-token refusal.
 
 ## Handoff Rules
 

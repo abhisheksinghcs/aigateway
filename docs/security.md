@@ -32,7 +32,7 @@ No Azure AI API key or client secret is required.
 | AKS control plane | Microsoft Entra authentication, Azure RBAC, local accounts disabled |
 | Pod identity | OIDC issuer and Workload Identity |
 | Network | Azure CNI Overlay with Cilium network-policy support |
-| Gateway exposure | ClusterIP only; no public HTTP endpoint |
+| Gateway exposure | Trusted HTTPS ingress exposes only `/mcp`; `/ui` and `/v1` return ingress-level 404 responses |
 | Gateway credential | Random master key in a Kubernetes Secret |
 | POC database credentials | Random PostgreSQL passwords in Kubernetes Secrets and Helm release state |
 | Model authorization | Least-privilege Azure RBAC assignment |
@@ -50,7 +50,7 @@ No Azure AI API key or client secret is required.
 ## Deferred Hardening
 
 - Private Key Vault endpoint and Secrets Store CSI integration
-- Public HTTPS ingress with customer-owned DNS and certificate
+- Customer-owned production DNS and certificate to replace the temporary `nip.io` hostname
 - Private Azure AI endpoint and private DNS
 - Restricted egress through an approved enterprise path
 - PostgreSQL with Microsoft Entra authentication where supported by LiteLLM
@@ -63,7 +63,7 @@ No Azure AI API key or client secret is required.
 - Do not add `SecurityControl=Ignore` to bypass inherited policy without an explicit approved exception.
 - Do not store the LiteLLM master key in `values.yaml`, `config.yaml`, shell history, or Git.
 - Do not use Azure AI API keys while Workload Identity is available.
-- Do not expose the ClusterIP service through public HTTP.
+- Do not expose the LiteLLM service directly or bypass the authenticated HTTPS ingress.
 - Do not claim identity validation based only on pod readiness; inspect the federated identity and execute a real model request.
 - Do not reuse the Agent 365 application client secret that was exposed during design discussion. Revoke it before rollout.
 - Do not store the replacement Agent 365 client secret in Git, LiteLLM configuration, Helm values, Helm command-line values, logs, or documentation.

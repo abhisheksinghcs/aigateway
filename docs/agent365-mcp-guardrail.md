@@ -150,6 +150,32 @@ and `curl`. A separate decision and test are required before claiming Copilot
 Studio support. Pattern A is simpler for Copilot Studio; Pattern B preserves
 the virtual-key alias in Agent 365 evaluations.
 
+## Public MCP Endpoint
+
+The POC exposes LiteLLM's streamable HTTP MCP endpoint at:
+
+```text
+https://57.167.155.123.nip.io/mcp
+```
+
+The endpoint uses a publicly trusted Let's Encrypt certificate. The ingress
+disables response buffering and allows one-hour proxy read and send timeouts
+for long-lived MCP traffic.
+
+Only `/mcp` is routed to LiteLLM by the public ingress. `/ui` and `/v1` return
+an ingress-level HTTP 404. An unauthenticated `/mcp` request reaches LiteLLM
+and returns HTTP 401, proving that the public route is live without weakening
+gateway authentication.
+
+The `nip.io` hostname is suitable for this POC, not production. Replace it
+with customer-owned DNS and a corresponding certificate before a production
+rollout.
+
+The Azure Load Balancer initially timed out because the AKS subnet NSG denied
+public ports 80 and 443 even though the AKS-managed NIC NSG had the correct
+public-IP-specific allow rule. `infra/modules/network.bicep` now manages the
+required subnet rule and preserves both subnet NSG associations.
+
 ## Proposed LiteLLM Configuration
 
 ```yaml

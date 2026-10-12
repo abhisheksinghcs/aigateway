@@ -11,10 +11,10 @@ Enterprise-style, cost-conscious LiteLLM AI Gateway lab for customer demonstrati
 - Existing Azure AI Services `o4-mini` deployment
 - Logical LiteLLM model alias: `customer-chat`
 - Microsoft Agent 365 `pre_mcp_call` guardrail with DeepWiki MCP
-- ClusterIP-only initial gateway exposure
+- Publicly trusted HTTPS ingress for the authenticated `/mcp` route
 - Bicep infrastructure and Helm application deployment
 
-The POC includes a bundled single-node PostgreSQL instance so the LiteLLM admin panel and persistent management features work. The Agent 365 guardrail MVP is validated through a local port-forward. Redis, multi-model routing, fallback, expanded FinOps, additional guardrails, public HTTPS ingress, managed PostgreSQL, and private model networking remain later phases.
+The POC includes a bundled single-node PostgreSQL instance so the LiteLLM admin panel and persistent management features work. The Agent 365 guardrail MVP is validated, and the public `/mcp` endpoint has trusted TLS. The Admin UI and `/v1` are not exposed by the public ingress. Redis, multi-model routing, fallback, expanded FinOps, additional guardrails, managed PostgreSQL, production DNS, and private model networking remain later phases.
 
 ## Approval Boundaries
 
@@ -49,7 +49,13 @@ helm template litellm \
 
 ## Deployment Status
 
-The approved POC scope is deployed and functionally verified. The gateway remains ClusterIP-only and is accessed with a local port-forward:
+The approved POC scope is deployed and functionally verified. The MCP endpoint is:
+
+```text
+https://57.167.155.123.nip.io/mcp
+```
+
+An unauthenticated request returns HTTP 401 from LiteLLM. The Admin UI remains private and is accessed with a local port-forward:
 
 ```bash
 kubectl port-forward -n litellm service/litellm 4000:4000

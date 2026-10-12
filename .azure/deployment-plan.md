@@ -154,8 +154,8 @@ These ranges do not overlap one another. Connectivity to an enterprise hub or on
 | Workload identity | User-assigned managed identity | No paid SKU | 1 |
 | Central logs | Log Analytics | Pay-as-you-go, 30-day retention target | 1 |
 | Gateway | LiteLLM | Monolithic official Helm chart | 2 |
-| Initial entry point | Kubernetes ClusterIP plus local port-forward | No public endpoint | 2 |
-| Customer-facing entry point | HTTPS ingress with customer-owned DNS and certificate | Deferred until DNS strategy is confirmed | Later |
+| Initial entry point | Kubernetes ClusterIP plus local port-forward | Private administrative access | 2 |
+| MCP entry point | NGINX HTTPS ingress with Let's Encrypt and temporary `nip.io` DNS | Exposes only authenticated `/mcp`; customer-owned DNS remains a production requirement | 7 |
 | Model | Existing Azure AI Services deployment | `o4-mini`, GlobalStandard | 3 |
 | Secrets hardening | Key Vault | Standard, RBAC, public access disabled, private endpoint | 5 |
 | Persistent gateway state | PostgreSQL Flexible Server | Cost-conscious burstable SKU selected in Phase 6 | 6 |
@@ -366,12 +366,25 @@ This command will create or update the dedicated resource group and the resource
 | Agent 365 delegated allow path | Temporary DeepWiki-scoped key plus gateway-audience user token | Pass: HTTP 200, guarded `read_wiki_structure` result | 2026-10-12 10:08 EDT |
 | Agent 365 mandatory user context | Guarded call without delegated bearer token | Pass: HTTP 401; tool refused before execution | 2026-10-12 10:08 EDT |
 | Admin UI login hardening | Database admin count, revision 8 rollout, `/login`, authenticated management API, and personal admin login | Pass: two password-backed admins; environment UI login returns 401; master-key API returns 200; personal admin login succeeds | 2026-10-12 11:44 EDT |
+| MCP ingress infrastructure validation | `validate-deployment.sh --scope sub ...`, Bicep lint, and explicit-principal structured what-if | Pass: template build and subscription validation succeeded; no resource deletion change type; both existing subnet NSG associations are preserved | 2026-10-12 11:53 EDT |
+| MCP ingress manifest validation | `kubectl apply --dry-run=client` for the ClusterIssuer and public ingress | Pass: `/mcp` ingress and streaming annotations accepted | 2026-10-12 11:53 EDT |
+| MCP ingress static role verification | Reviewed `model-role.bicep` and the AKS-scoped assignment in `aks.bicep` | Pass: no RBAC changes introduced by the ingress remediation | 2026-10-12 11:53 EDT |
+| MCP ingress Azure deployment | Approval-gated `scripts/deploy-infra.sh` | Pass: subscription deployment succeeded; subnet NSG rule provisioned; public HTTP reached ingress-nginx | 2026-10-12 11:58 EDT |
+| MCP ingress TLS and route validation | Certificate readiness, trusted `curl`, OpenSSL certificate inspection, and ingress boundary requests | Pass: Let's Encrypt certificate Ready; `/mcp` returns LiteLLM HTTP 401; `/ui` and `/v1` return ingress HTTP 404 | 2026-10-12 11:59 EDT |
+| MCP ingress post-deployment regression | Bicep build/lint, shell syntax, Kubernetes health, live RBAC, and `scripts/test-gateway.sh` | Pass: all workloads Ready, required roles present, and `customer-chat` returned `LiteLLM gateway path verified.` | 2026-10-12 12:00 EDT |
 
 **Validated by:** azure-validate workflow
 
 The unsupported what-if entry is the `Cognitive Services OpenAI User` assignment on the existing model account. Azure cannot calculate its deterministic name during what-if because the new managed identity principal ID is available only at deployment time. Template validation with this assignment enabled succeeded.
 
 The infrastructure was evaluated against pinned Azure Verified Modules. VNet, Log Analytics, and the user-assigned identity use AVM. The refreshed proof above covers the resulting template.
+
+### Live Role Verification
+
+- The LiteLLM workload identity retains `Cognitive Services OpenAI User` on the existing `Agent365-Teams-Agents` account.
+- The deployment principal retains `Azure Kubernetes Service RBAC Cluster Admin` on `litellm-demo-aks`.
+- The MCP ingress remediation introduced no new role assignment and changed no application identity.
+- Status: Pass, 2026-10-12 12:00 EDT.
 
 AKS remains a direct Bicep resource after evaluating AVM `0.14.0`: its nullable OIDC issuer output resolves to null during what-if, causing the downstream Workload Identity federated credential deployment parameter to be omitted. This prevents a complete single-pass preview. VNet, Log Analytics, and the user-assigned identity continue to use pinned AVM modules.
 
