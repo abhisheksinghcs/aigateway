@@ -327,6 +327,9 @@ Completed on 2026-10-12:
 9. A request without the delegated user token was refused with HTTP 401 before tool execution.
 10. Both temporary validation keys were deleted.
 11. `customer-chat` inference still returned `LiteLLM gateway path verified.`
+12. The persistent alias `copilot-deepwiki-mvp` was created in the Admin UI.
+13. The UI initially failed before reaching LiteLLM because of the browser/port-forward path; an active port-forward and private browser window resolved it.
+14. The UI-created key initially had no MCP object permission. `/key/update` attached a dedicated object-permission record with only `mcp_servers: ["deepwiki"]`, preserving the raw key.
 
 An administrator-configured Microsoft Defender policy block has not yet been
 tested. That validation requires an approved blocking policy and should be

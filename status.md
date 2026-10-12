@@ -1,6 +1,6 @@
 # AI Gateway Lab Status
 
-Last updated: 2026-10-12 10:08 EDT
+Last updated: 2026-10-12 10:39 EDT
 
 ## Current State
 
@@ -88,6 +88,9 @@ The approved POC is deployed and functionally verified. Azure infrastructure and
 - The guarded call is recorded in PostgreSQL as guardrail `agent365-mcp`, call type `call_mcp_tool`, status `success`, and 1,991 ms duration.
 - A missing-user-token call was refused with HTTP 401 before the DeepWiki tool ran.
 - Both temporary validation keys were deleted after their tests.
+- The Admin UI initially displayed `TypeError: Failed to fetch`; no request reached LiteLLM. Retrying through an active port-forward in a private browser window succeeded, confirming a stale browser/access-path issue rather than a key API failure.
+- The persistent virtual key alias is `copilot-deepwiki-mvp`. The UI created the alias without MCP object permission, so the existing key was updated by its non-secret ID through `/key/update`.
+- Read-back verification confirms the persistent key now has a dedicated object-permission record with only `mcp_servers: ["deepwiki"]`. The raw key was not read, logged, or stored in the repository.
 
 ## Operational Notes
 
@@ -122,7 +125,7 @@ The approved POC is deployed and functionally verified. Azure infrastructure and
 ## Next Step
 
 1. Choose the Copilot Studio integration pattern: OAuth-only LiteLLM JWT authentication or OAuth plus a custom virtual-key header.
-2. Create and securely deliver a persistent, DeepWiki-scoped virtual key only if the two-header pattern is selected.
+2. If the two-header pattern is selected, securely configure Copilot Studio with the existing `copilot-deepwiki-mvp` raw key.
 3. Repair and validate publicly trusted HTTPS ingress before connecting a hosted Copilot Studio agent.
 4. Validate an administrator-configured Defender policy block separately; the MVP currently proves the allow path and mandatory-user-token refusal.
 
