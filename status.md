@@ -1,10 +1,10 @@
 # AI Gateway Lab Status
 
-Last updated: 2026-10-09 10:32 EDT
+Last updated: 2026-10-12 09:26 EDT
 
 ## Current State
 
-The approved POC scope is deployed and functionally verified. Azure infrastructure and LiteLLM are running in `eastus2`. The gateway is intentionally exposed only through a Kubernetes `ClusterIP`; there is no public endpoint.
+The approved base POC is deployed and functionally verified. Azure infrastructure and LiteLLM are running in `eastus2`. PostgreSQL-backed administration is operational. Public ingress and Microsoft Agent 365 MCP guardrail integration are incomplete and must not be treated as ready.
 
 ## Azure Context
 
@@ -36,16 +36,23 @@ The approved POC scope is deployed and functionally verified. Azure infrastructu
 ## LiteLLM State
 
 - Namespace/release: `litellm`
-- Chart and image version: `1.90.2`
-- OCI chart digest: `sha256:df9be29316b0eda2b7df5ba6077a39aeb818cf20fb19b01ea4bd8937af1063b3`
+- Chart and image version: `1.105.0`
+- OCI chart digest: `sha256:9d907efc6799afb994d15add76c90ea7557d9a3348450a895ddf4eb09a812f55`
+- Multi-architecture image index digest: `sha256:60947db020b57e204823d3fbc8bb295c85be890d7c9adcc77fb4f5fc2fe410b2`
 - Replicas: one Ready pod
-- Service: `ClusterIP` on port 4000
+- Service: `ClusterIP` on port 4000; NGINX ingress is installed but not publicly reachable
+- Temporary Agent 365 hostname: `57.167.155.123.nip.io`
+- Intended public path: `/v1` only; the Azure Load Balancer frontend currently times out and its certificate is not issued
 - Logical model: `customer-chat`
 - Physical backend: Azure `o4-mini` deployment in `Agent365-Teams-Agents`
 - Azure model version: `2025-04-16`
 - Authentication: AKS Workload Identity; no Azure AI API key
 - LiteLLM cost mapping: `model_info.base_model: azure/o4-mini`
-- PostgreSQL, Redis, and migration Job: disabled/not deployed
+- PostgreSQL: bundled single-node instance approved for the POC admin panel
+- Redis: disabled/not deployed
+- PostgreSQL image: `bitnamilegacy/postgresql@sha256:ea55532b6f75afbc97f617d91ec5efae17609c8eb825a31845fa9cb9e4aa13e1`
+- PostgreSQL storage: bound 8 Gi PVC
+- Migration Job: enabled for schema management; latest run completed and was removed by TTL
 
 ## Validation Evidence
 
@@ -64,10 +71,19 @@ The approved POC scope is deployed and functionally verified. Azure infrastructu
 
 - LiteLLM router logs confirmed `customer-chat` routed to `azure/o4-mini` with HTTP 200.
 - No unidentified-Azure-model cost warning remained after setting `base_model`.
+- Helm revision 6 is `deployed`; revision 5 is the superseded `1.90.2` rollback point.
+- PostgreSQL is Ready and all LiteLLM migrations plus the post-migration sanity check completed.
+- Admin authentication with username `admin` and the existing master key returned HTTP 303 to `/ui/?login=success`.
+- Post-database inference returned exactly `LiteLLM gateway path verified.`
+- The running Python package reports LiteLLM `1.105.0`.
+- Runtime import verification confirmed `Agent365Guardrail`, the `agent_365` registry entry, and `pre_mcp_call` support.
+- The `1.105.0` database migrations completed successfully. LiteLLM was restarted after migration so the final startup schema check ran against the migrated database with no schema-drift or application-error log.
+- Admin authentication still returns HTTP 303 to `/ui?login=success` after the upgrade.
+- Post-upgrade and post-restart `customer-chat` inference returned exactly `LiteLLM gateway path verified.`
 
 ## Operational Notes
 
-- The two AKS VMSS instances were externally deallocated once while the AKS control plane still reported Running. They were started with explicit approval and recovered to Ready. Subscription-level shutdown automation may deallocate them again.
+- The two AKS VMSS instances have been externally deallocated more than once while the AKS control plane and node pool report Running. They were started as a prerequisite to the approved `1.105.0` upgrade and recovered to Ready. Subscription-level shutdown automation may deallocate them again.
 - `kubelogin` was installed with `az aks install-cli` because Homebrew was blocked by the machine's Xcode version.
 - The generated LiteLLM master key exists only in the Kubernetes Secret `litellm-master-key`; it is not stored in Git.
 - Access requires a local port-forward:
@@ -75,11 +91,19 @@ The approved POC scope is deployed and functionally verified. Azure infrastructu
   ```bash
   kubectl port-forward -n litellm service/litellm 4000:4000
   ```
+- The Microsoft Agent 365 MCP guardrail is a separate flow from ordinary chat completions. It requires a configured MCP server, a database-backed LiteLLM virtual key scoped to that server, and a delegated user Entra token on every guarded MCP call.
+- DeepWiki was selected as the MVP MCP server.
+- `customer-chat` is a LiteLLM model alias deployed in the gateway ConfigMap, not a separate application.
+- The LiteLLM quick start's two-header flow is not a direct match for the Copilot Studio MCP wizard, which selects one server authentication method. The CLI MVP will validate both headers first; Copilot Studio requires a later choice between LiteLLM JWT authentication or OAuth plus a custom virtual-key header.
+- The key alias is correlation metadata sent by LiteLLM as the Agent 365 evaluation's agent ID. It does not require the Copilot Studio agent to use the same display name.
+- The Agent 365 application client secret was exposed in conversation and must be rotated before deployment. Never copy it into Git, Helm values, `config.yaml`, `status.md`, logs, or shell history.
+- The proposed configuration uses only `os.environ/AGENT365_TENANT_ID`, `os.environ/AGENT365_CLIENT_ID`, and `os.environ/AGENT365_CLIENT_SECRET` references. The values must be injected from a Kubernetes Secret without storing the secret in Helm release state.
+- The detailed design and customer walkthrough are in `docs/agent365-mcp-guardrail.md`.
 
 ## Deferred Scope
 
 - Public HTTPS ingress, DNS, and certificate ownership
-- PostgreSQL-backed virtual keys, users, teams, budgets, and spend history
+- Managed PostgreSQL for production-grade persistence
 - Redis and multiple LiteLLM replicas
 - Multiple models, routing, fallback, and load balancing
 - Key Vault and private endpoints
@@ -88,7 +112,15 @@ The approved POC scope is deployed and functionally verified. Azure infrastructu
 
 ## Next Step
 
-No required deployment work remains for the approved POC scope. Choose and approve a deferred capability before making additional Azure or Kubernetes changes.
+Before any deployment:
+
+1. Select the MVP MCP server.
+2. Rotate the exposed Agent 365 client secret.
+3. Add the documented Agent 365 guardrail and DeepWiki MCP configuration.
+4. Render and validate the merged configuration against the pinned `1.105.0` release.
+5. After explicit approval, create the Kubernetes Secret, roll out the configuration, create a DeepWiki-scoped virtual key, and validate allow/block behavior through a local port-forward.
+
+Public ingress repair is a separate workstream and does not block local guardrail validation.
 
 ## Handoff Rules
 

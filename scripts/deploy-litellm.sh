@@ -6,7 +6,7 @@ resource_group="${RESOURCE_GROUP:-rg-litellm-gateway-demo-eus2}"
 cluster_name="${AKS_NAME:-litellm-demo-aks}"
 namespace="litellm"
 release_name="litellm"
-chart_version="1.90.2"
+chart_version="1.105.0"
 
 if [[ "${APPROVE_KUBERNETES_CHANGES:-}" != "yes" ]]; then
   cat >&2 <<EOF
@@ -44,11 +44,27 @@ workload_client_id="$(az identity show \
   --query clientId \
   --output tsv)"
 
+if kubectl get secret litellm-dbcredentials --namespace "$namespace" >/dev/null 2>&1; then
+  postgres_password="$(kubectl get secret litellm-dbcredentials \
+    --namespace "$namespace" \
+    --output jsonpath='{.data.postgres-password}' | base64 --decode)"
+  database_password="$(kubectl get secret litellm-dbcredentials \
+    --namespace "$namespace" \
+    --output jsonpath='{.data.password}' | base64 --decode)"
+else
+  postgres_password="$(openssl rand -hex 24)"
+  database_password="$(openssl rand -hex 24)"
+fi
+
 helm upgrade --install "$release_name" \
   oci://ghcr.io/berriai/litellm-helm \
   --version "$chart_version" \
   --namespace "$namespace" \
   --values "$repo_root/kubernetes/values.yaml" \
   --set-string "serviceAccount.annotations.azure\\.workload\\.identity/client-id=$workload_client_id" \
+  --set-string "postgresql.auth.postgres-password=$postgres_password" \
+  --set-string "postgresql.auth.password=$database_password" \
   --wait \
   --timeout 10m
+
+unset postgres_password database_password

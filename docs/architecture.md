@@ -9,6 +9,7 @@ flowchart TD
     Gateway[LiteLLM AI Gateway on AKS]
     Entra[Microsoft Entra ID]
     Model[o4-mini in Agent365-Teams-Agents]
+    Database[(Bundled PostgreSQL<br/>POC admin state)]
     Monitor[Azure Monitor and Log Analytics]
 
     Client -->|OpenAI-compatible request<br/>model: customer-chat| PortForward
@@ -16,6 +17,7 @@ flowchart TD
     Gateway -->|Projected service-account token| Entra
     Entra -->|Short-lived access token| Gateway
     Gateway -->|Azure OpenAI request| Model
+    Gateway --> Database
     Gateway --> Monitor
 ```
 
@@ -34,12 +36,14 @@ flowchart TB
                 AKSSubnet --> AKS
             end
             Identity[LiteLLM workload identity]
+            PostgreSQL[(Single-node PostgreSQL<br/>8 Gi PVC)]
             LAW[(Log Analytics)]
         end
         ExistingAI["Existing Agent365-Teams-Agents<br/>o4-mini"]
     end
 
     AKS --> LAW
+    AKS --> PostgreSQL
     AKS --> Identity
     Identity --> ExistingAI
 ```
@@ -88,7 +92,9 @@ flowchart LR
     App --> Alias --> Gateway --> Physical
 ```
 
-The client does not receive or need the Azure deployment name.
+The client does not receive or need the Azure deployment name. The bundled PostgreSQL instance persists admin-panel state for the POC; it is not a production-grade managed database.
+
+`customer-chat` is a LiteLLM routing alias, not an application or separately deployed service. The proposed Microsoft Agent 365 MCP guardrail is an independent request path. See [Microsoft Agent 365 MCP Guardrail Guide](agent365-mcp-guardrail.md) for the user-token, OBO, Defender evaluation, and DeepWiki flow.
 
 ## Observability
 

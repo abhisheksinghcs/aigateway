@@ -13,13 +13,13 @@ Enterprise-style, cost-conscious LiteLLM AI Gateway lab for customer demonstrati
 - ClusterIP-only initial gateway exposure
 - Bicep infrastructure and Helm application deployment
 
-PostgreSQL, Redis, virtual keys, multi-model routing, fallback, FinOps, guardrails, public HTTPS ingress, and private model networking are introduced in later phases.
+The POC includes a bundled single-node PostgreSQL instance so the LiteLLM admin panel and persistent management features work. Redis, multi-model routing, fallback, expanded FinOps, guardrails, public HTTPS ingress, managed PostgreSQL, and private model networking remain later phases.
 
 ## Approval Boundaries
 
 Repository artifacts may be generated and validated locally. No Azure deployment, Azure RBAC change, Helm installation, or destructive operation is authorized unless it is separately explained and explicitly approved.
 
-The source-of-truth plan is [.azure/deployment-plan.md](.azure/deployment-plan.md). The cross-session handoff is [status.md](status.md).
+The source-of-truth plan is [.azure/deployment-plan.md](.azure/deployment-plan.md). The cross-session handoff is [status.md](status.md). The proposed Microsoft Agent 365 MCP integration and its Copilot Studio caveats are documented in [docs/agent365-mcp-guardrail.md](docs/agent365-mcp-guardrail.md).
 
 ## Repository Layout
 
@@ -40,7 +40,7 @@ az bicep build --file infra/main.bicep
 ```bash
 helm template litellm \
   oci://ghcr.io/berriai/litellm-helm \
-  --version 1.90.2 \
+  --version 1.105.0 \
   --namespace litellm \
   --values kubernetes/values.yaml \
   --set-string serviceAccount.annotations.azure\\.workload\\.identity/client-id=00000000-0000-0000-0000-000000000000
@@ -56,4 +56,4 @@ kubectl port-forward -n litellm service/litellm 4000:4000
 
 Run `scripts/status.sh` for current Azure and Kubernetes state. See [status.md](status.md) for the deployment handoff and known operational notes.
 
-See [docs/architecture.md](docs/architecture.md) and [docs/security.md](docs/security.md) for design details.
+See [docs/architecture.md](docs/architecture.md), [docs/security.md](docs/security.md), and [docs/agent365-mcp-guardrail.md](docs/agent365-mcp-guardrail.md) for design details.

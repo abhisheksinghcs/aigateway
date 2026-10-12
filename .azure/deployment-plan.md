@@ -286,7 +286,8 @@ The Azure CLI `quota` extension was installed and used first. Unsupported/non-qu
 ### Later Capability Phases
 
 - [ ] Key Vault and secret hardening
-- [ ] PostgreSQL and Redis
+- [x] Bundled PostgreSQL for POC admin-panel persistence
+- [ ] Managed PostgreSQL and Redis
 - [ ] Multiple models
 - [ ] Routing, fallback, and load balancing
 - [ ] Virtual keys, quotas, and FinOps
@@ -353,6 +354,14 @@ This command will create or update the dedicated resource group and the resource
 | Azure Policy | Azure Policy MCP inherited assignment inventory plus successful validate/what-if | Pass for planned resources; existing deploy-if-not-exists policies remain applicable | 2026-10-08 19:12 EDT |
 | Static role assignments | Reviewed `model-role.bicep` and AKS-scoped assignment in `aks.bicep` | Pass: least-privilege resource scopes | 2026-10-08 19:12 EDT |
 | Corrective AKS RBAC validation | Bicep lint, subscription validation, and explicit-principal what-if | Pass: 1 intended role-assignment create, 0 deletes; remaining modify entries are Azure computed/default-property comparisons | 2026-10-08 19:25 EDT |
+| Database-enabled Helm lint/render | Pinned chart `1.90.2`, bundled PostgreSQL and migration Job | Pass | 2026-10-09 11:29 EDT |
+| PostgreSQL migration | `litellm-migrations` Job logs | Pass: all migrations and post-migration sanity check completed | 2026-10-09 11:29 EDT |
+| Admin authentication | `POST /login` with `admin` and the Kubernetes-stored master key | Pass: HTTP 303 redirect to `/ui/?login=success` | 2026-10-09 11:29 EDT |
+| Post-database inference | `scripts/test-gateway.sh` | Pass: `LiteLLM gateway path verified.` | 2026-10-09 11:29 EDT |
+| LiteLLM `1.105.0` chart lint/render | Pinned OCI chart with existing PostgreSQL and Workload Identity values | Pass: 14 resources rendered; migration Job and pinned PostgreSQL image retained | 2026-10-12 09:23 EDT |
+| LiteLLM `1.105.0` upgrade | Approval-gated `scripts/deploy-litellm.sh` | Pass: Helm revision 6 deployed; database migrations completed | 2026-10-12 09:25 EDT |
+| Agent 365 runtime support | Import `Agent365Guardrail` and inspect supported hooks in the running pod | Pass: `agent_365` registered with `pre_mcp_call` | 2026-10-12 09:25 EDT |
+| Post-upgrade admin and inference | `POST /login` and `scripts/test-gateway.sh` after post-migration restart | Pass: HTTP 303 login and `LiteLLM gateway path verified.` | 2026-10-12 09:26 EDT |
 
 **Validated by:** azure-validate workflow
 
@@ -395,12 +404,19 @@ Post-deployment Kubernetes authorization found that the initial direct AKS wrapp
 
 ### LiteLLM Functional Verification
 
-- Helm release: `litellm`, revision 1, chart/image `1.90.2`
-- OCI chart digest: `sha256:df9be29316b0eda2b7df5ba6077a39aeb818cf20fb19b01ea4bd8937af1063b3`
+- Helm release: `litellm`, revision 6, chart/image `1.105.0`
+- OCI chart digest: `sha256:9d907efc6799afb994d15add76c90ea7557d9a3348450a895ddf4eb09a812f55`
+- Multi-architecture image index digest: `sha256:60947db020b57e204823d3fbc8bb295c85be890d7c9adcc77fb4f5fc2fe410b2`
+- Rollback point: superseded revision 5, chart/image `1.90.2`
 - Workload state: one Ready pod, zero restarts during validation
 - Exposure: ClusterIP only; no public endpoint
 - Identity: projected Azure Workload Identity token and required Azure environment variables verified
-- Optional stateful components: PostgreSQL, Redis, and migration Job absent
+- PostgreSQL: single Ready replica with an 8 Gi bound PVC
+- PostgreSQL image: pinned legacy mirror digest `sha256:ea55532b6f75afbc97f617d91ec5efae17609c8eb825a31845fa9cb9e4aa13e1` because the chart-pinned tag was removed from the primary Bitnami repository
+- Migration Job: completed successfully and removed by its TTL policy
+- Agent 365 implementation: runtime registry contains `Agent365Guardrail` with `pre_mcp_call`; configuration and credentials are not yet deployed
+- Redis: absent
+- Admin authentication: `admin` plus the existing master key succeeds and redirects to `/ui/?login=success`
 - Logical model: `customer-chat`
 - Physical provider/model: Azure `o4-mini`, confirmed by LiteLLM router logs with HTTP 200
 - Functional response: `LiteLLM gateway path verified.`
