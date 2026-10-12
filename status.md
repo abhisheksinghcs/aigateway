@@ -1,6 +1,6 @@
 # AI Gateway Lab Status
 
-Last updated: 2026-10-12 11:44 EDT
+Last updated: 2026-10-12 11:45 EDT
 
 ## Current State
 
@@ -75,12 +75,12 @@ The approved POC is deployed and functionally verified. Azure infrastructure and
 - No unidentified-Azure-model cost warning remained after setting `base_model`.
 - Helm revision 8 is `deployed`; revision 7 is the pre-login-hardening rollback point, revision 6 is the pre-guardrail `1.105.0` rollback point, and revision 5 is the `1.90.2` rollback point.
 - PostgreSQL is Ready and all LiteLLM migrations plus the post-migration sanity check completed.
-- Admin authentication with username `admin` and the existing master key returned HTTP 303 to `/ui/?login=success`.
+- Before login hardening, bootstrap authentication with username `admin` and the existing master key returned HTTP 303 to `/ui/?login=success`.
 - Post-database inference returned exactly `LiteLLM gateway path verified.`
 - The running Python package reports LiteLLM `1.105.0`.
 - Runtime import verification confirmed `Agent365Guardrail`, the `agent_365` registry entry, and `pre_mcp_call` support.
 - The `1.105.0` database migrations completed successfully. LiteLLM was restarted after migration so the final startup schema check ran against the migrated database with no schema-drift or application-error log.
-- Admin authentication still returns HTTP 303 to `/ui?login=success` after the upgrade.
+- Before login hardening, bootstrap authentication still returned HTTP 303 to `/ui?login=success` after the version upgrade.
 - Post-upgrade and post-restart `customer-chat` inference returned exactly `LiteLLM gateway path verified.`
 - `agent365-mcp` initialized successfully and DeepWiki exposed `ask_wiki_question`, `read_wiki_contents`, and `read_wiki_structure`.
 - A delegated Azure CLI user token was verified with the gateway API audience and `access_as_user` scope.
@@ -127,10 +127,14 @@ The approved POC is deployed and functionally verified. Azure infrastructure and
 
 ## Next Step
 
-1. Choose the Copilot Studio integration pattern: OAuth-only LiteLLM JWT authentication or OAuth plus a custom virtual-key header.
-2. If the two-header pattern is selected, securely configure Copilot Studio with the existing `copilot-deepwiki-mvp` raw key.
-3. Repair and validate publicly trusted HTTPS ingress before connecting a hosted Copilot Studio agent.
-4. Validate an administrator-configured Defender policy block separately; the MVP currently proves the allow path and mandatory-user-token refusal.
+The next build item is the Copilot Studio connectivity layer:
+
+1. Repair the Azure public load-balancer path and issue a publicly trusted TLS certificate.
+2. Expose LiteLLM's streamable HTTP `/mcp` route through ingress while keeping `/ui` private. The existing incomplete ingress exposes `/v1`, which is not sufficient for Copilot Studio MCP.
+3. Build the Copilot Studio MCP connection using delegated OAuth for the gateway audience and `access_as_user`.
+4. If the two-header pattern is retained, add `x-litellm-api-key` as a connector-level secret header using the existing `copilot-deepwiki-mvp` raw key. Otherwise, enable and validate LiteLLM JWT admission before omitting the virtual-key header.
+5. Validate the hosted Copilot Studio -> HTTPS `/mcp` -> LiteLLM -> Agent 365 -> DeepWiki flow.
+6. Validate an administrator-configured Defender policy block separately; the MVP currently proves the allow path and mandatory-user-token refusal.
 
 ## Handoff Rules
 
