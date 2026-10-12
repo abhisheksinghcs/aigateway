@@ -362,6 +362,9 @@ This command will create or update the dedicated resource group and the resource
 | LiteLLM `1.105.0` upgrade | Approval-gated `scripts/deploy-litellm.sh` | Pass: Helm revision 6 deployed; database migrations completed | 2026-10-12 09:25 EDT |
 | Agent 365 runtime support | Import `Agent365Guardrail` and inspect supported hooks in the running pod | Pass: `agent_365` registered with `pre_mcp_call` | 2026-10-12 09:25 EDT |
 | Post-upgrade admin and inference | `POST /login` and `scripts/test-gateway.sh` after post-migration restart | Pass: HTTP 303 login and `LiteLLM gateway path verified.` | 2026-10-12 09:26 EDT |
+| Agent 365 configuration rollout | Approval-gated Helm deployment with Kubernetes Secret reference | Pass: revision 7 deployed; guardrail initialized and three DeepWiki tools discovered | 2026-10-12 10:07 EDT |
+| Agent 365 delegated allow path | Temporary DeepWiki-scoped key plus gateway-audience user token | Pass: HTTP 200, guarded `read_wiki_structure` result | 2026-10-12 10:08 EDT |
+| Agent 365 mandatory user context | Guarded call without delegated bearer token | Pass: HTTP 401; tool refused before execution | 2026-10-12 10:08 EDT |
 
 **Validated by:** azure-validate workflow
 
@@ -404,17 +407,17 @@ Post-deployment Kubernetes authorization found that the initial direct AKS wrapp
 
 ### LiteLLM Functional Verification
 
-- Helm release: `litellm`, revision 6, chart/image `1.105.0`
+- Helm release: `litellm`, revision 7, chart/image `1.105.0`
 - OCI chart digest: `sha256:9d907efc6799afb994d15add76c90ea7557d9a3348450a895ddf4eb09a812f55`
 - Multi-architecture image index digest: `sha256:60947db020b57e204823d3fbc8bb295c85be890d7c9adcc77fb4f5fc2fe410b2`
-- Rollback point: superseded revision 5, chart/image `1.90.2`
+- Rollback points: revision 6 before the guardrail configuration; revision 5 before the `1.105.0` upgrade
 - Workload state: one Ready pod, zero restarts during validation
 - Exposure: ClusterIP only; no public endpoint
 - Identity: projected Azure Workload Identity token and required Azure environment variables verified
 - PostgreSQL: single Ready replica with an 8 Gi bound PVC
 - PostgreSQL image: pinned legacy mirror digest `sha256:ea55532b6f75afbc97f617d91ec5efae17609c8eb825a31845fa9cb9e4aa13e1` because the chart-pinned tag was removed from the primary Bitnami repository
 - Migration Job: completed successfully and removed by its TTL policy
-- Agent 365 implementation: runtime registry contains `Agent365Guardrail` with `pre_mcp_call`; configuration and credentials are not yet deployed
+- Agent 365: `agent365-mcp` is deployed as default-on, fail-closed `pre_mcp_call`; DeepWiki allow path and missing-user-token refusal are verified
 - Redis: absent
 - Admin authentication: `admin` plus the existing master key succeeds and redirects to `/ui/?login=success`
 - Logical model: `customer-chat`

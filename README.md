@@ -10,10 +10,11 @@ Enterprise-style, cost-conscious LiteLLM AI Gateway lab for customer demonstrati
 - Microsoft Entra authentication and AKS Workload Identity
 - Existing Azure AI Services `o4-mini` deployment
 - Logical LiteLLM model alias: `customer-chat`
+- Microsoft Agent 365 `pre_mcp_call` guardrail with DeepWiki MCP
 - ClusterIP-only initial gateway exposure
 - Bicep infrastructure and Helm application deployment
 
-The POC includes a bundled single-node PostgreSQL instance so the LiteLLM admin panel and persistent management features work. Redis, multi-model routing, fallback, expanded FinOps, guardrails, public HTTPS ingress, managed PostgreSQL, and private model networking remain later phases.
+The POC includes a bundled single-node PostgreSQL instance so the LiteLLM admin panel and persistent management features work. The Agent 365 guardrail MVP is validated through a local port-forward. Redis, multi-model routing, fallback, expanded FinOps, additional guardrails, public HTTPS ingress, managed PostgreSQL, and private model networking remain later phases.
 
 ## Approval Boundaries
 

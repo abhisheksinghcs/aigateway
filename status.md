@@ -1,10 +1,10 @@
 # AI Gateway Lab Status
 
-Last updated: 2026-10-12 09:26 EDT
+Last updated: 2026-10-12 10:08 EDT
 
 ## Current State
 
-The approved base POC is deployed and functionally verified. Azure infrastructure and LiteLLM are running in `eastus2`. PostgreSQL-backed administration is operational. Public ingress and Microsoft Agent 365 MCP guardrail integration are incomplete and must not be treated as ready.
+The approved POC is deployed and functionally verified. Azure infrastructure and LiteLLM are running in `eastus2`. PostgreSQL-backed administration and the Microsoft Agent 365 guardrail MVP are operational through a local port-forward. Public ingress is incomplete and must not be treated as ready for hosted Copilot Studio access.
 
 ## Azure Context
 
@@ -53,6 +53,8 @@ The approved base POC is deployed and functionally verified. Azure infrastructur
 - PostgreSQL image: `bitnamilegacy/postgresql@sha256:ea55532b6f75afbc97f617d91ec5efae17609c8eb825a31845fa9cb9e4aa13e1`
 - PostgreSQL storage: bound 8 Gi PVC
 - Migration Job: enabled for schema management; latest run completed and was removed by TTL
+- Agent 365 guardrail: `agent365-mcp`, default-on `pre_mcp_call`, fail-closed
+- MCP server: `deepwiki`; three upstream tools discovered
 
 ## Validation Evidence
 
@@ -71,7 +73,7 @@ The approved base POC is deployed and functionally verified. Azure infrastructur
 
 - LiteLLM router logs confirmed `customer-chat` routed to `azure/o4-mini` with HTTP 200.
 - No unidentified-Azure-model cost warning remained after setting `base_model`.
-- Helm revision 6 is `deployed`; revision 5 is the superseded `1.90.2` rollback point.
+- Helm revision 7 is `deployed`; revision 6 is the pre-guardrail `1.105.0` rollback point and revision 5 is the `1.90.2` rollback point.
 - PostgreSQL is Ready and all LiteLLM migrations plus the post-migration sanity check completed.
 - Admin authentication with username `admin` and the existing master key returned HTTP 303 to `/ui/?login=success`.
 - Post-database inference returned exactly `LiteLLM gateway path verified.`
@@ -80,6 +82,12 @@ The approved base POC is deployed and functionally verified. Azure infrastructur
 - The `1.105.0` database migrations completed successfully. LiteLLM was restarted after migration so the final startup schema check ran against the migrated database with no schema-drift or application-error log.
 - Admin authentication still returns HTTP 303 to `/ui?login=success` after the upgrade.
 - Post-upgrade and post-restart `customer-chat` inference returned exactly `LiteLLM gateway path verified.`
+- `agent365-mcp` initialized successfully and DeepWiki exposed `ask_wiki_question`, `read_wiki_contents`, and `read_wiki_structure`.
+- A delegated Azure CLI user token was verified with the gateway API audience and `access_as_user` scope.
+- A temporary virtual key restricted to `deepwiki` completed `read_wiki_structure` through `/mcp-rest/tools/call` with HTTP 200.
+- The guarded call is recorded in PostgreSQL as guardrail `agent365-mcp`, call type `call_mcp_tool`, status `success`, and 1,991 ms duration.
+- A missing-user-token call was refused with HTTP 401 before the DeepWiki tool ran.
+- Both temporary validation keys were deleted after their tests.
 
 ## Operational Notes
 
@@ -94,11 +102,12 @@ The approved base POC is deployed and functionally verified. Azure infrastructur
 - The Microsoft Agent 365 MCP guardrail is a separate flow from ordinary chat completions. It requires a configured MCP server, a database-backed LiteLLM virtual key scoped to that server, and a delegated user Entra token on every guarded MCP call.
 - DeepWiki was selected as the MVP MCP server.
 - `customer-chat` is a LiteLLM model alias deployed in the gateway ConfigMap, not a separate application.
-- The LiteLLM quick start's two-header flow is not a direct match for the Copilot Studio MCP wizard, which selects one server authentication method. The CLI MVP will validate both headers first; Copilot Studio requires a later choice between LiteLLM JWT authentication or OAuth plus a custom virtual-key header.
+- The LiteLLM quick start's two-header flow is not a direct match for the Copilot Studio MCP wizard, which selects one server authentication method. The CLI MVP validated both headers; Copilot Studio still requires a choice between LiteLLM JWT authentication or OAuth plus a custom virtual-key header.
 - The key alias is correlation metadata sent by LiteLLM as the Agent 365 evaluation's agent ID. It does not require the Copilot Studio agent to use the same display name.
-- The Agent 365 application client secret was exposed in conversation and must be rotated before deployment. Never copy it into Git, Helm values, `config.yaml`, `status.md`, logs, or shell history.
+- The user confirmed on 2026-10-12 that the previously exposed Agent 365 application client secret was rotated. The replacement value has not been shared or stored in the repository. Never copy it into Git, Helm values, `config.yaml`, `status.md`, logs, or shell history.
 - The proposed configuration uses only `os.environ/AGENT365_TENANT_ID`, `os.environ/AGENT365_CLIENT_ID`, and `os.environ/AGENT365_CLIENT_SECRET` references. The values must be injected from a Kubernetes Secret without storing the secret in Helm release state.
 - The detailed design and customer walkthrough are in `docs/agent365-mcp-guardrail.md`.
+- The `agent365-mcp` guardrail, DeepWiki MCP server, and `litellm-agent365` environment Secret reference are deployed. The replacement secret exists only in Kubernetes and was entered through the hidden-prompt helper.
 
 ## Deferred Scope
 
@@ -108,19 +117,14 @@ The approved base POC is deployed and functionally verified. Azure infrastructur
 - Multiple models, routing, fallback, and load balancing
 - Key Vault and private endpoints
 - Private Azure AI networking
-- Expanded observability, guardrails, and FinOps demonstrations
+- Expanded observability, additional guardrails, and FinOps demonstrations
 
 ## Next Step
 
-Before any deployment:
-
-1. Select the MVP MCP server.
-2. Rotate the exposed Agent 365 client secret.
-3. Add the documented Agent 365 guardrail and DeepWiki MCP configuration.
-4. Render and validate the merged configuration against the pinned `1.105.0` release.
-5. After explicit approval, create the Kubernetes Secret, roll out the configuration, create a DeepWiki-scoped virtual key, and validate allow/block behavior through a local port-forward.
-
-Public ingress repair is a separate workstream and does not block local guardrail validation.
+1. Choose the Copilot Studio integration pattern: OAuth-only LiteLLM JWT authentication or OAuth plus a custom virtual-key header.
+2. Create and securely deliver a persistent, DeepWiki-scoped virtual key only if the two-header pattern is selected.
+3. Repair and validate publicly trusted HTTPS ingress before connecting a hosted Copilot Studio agent.
+4. Validate an administrator-configured Defender policy block separately; the MVP currently proves the allow path and mandatory-user-token refusal.
 
 ## Handoff Rules
 

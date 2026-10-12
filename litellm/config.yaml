@@ -7,6 +7,21 @@ model_list:
     model_info:
       base_model: azure/o4-mini
 
+guardrails:
+  - guardrail_name: agent365-mcp
+    litellm_params:
+      guardrail: agent_365
+      mode: pre_mcp_call
+      default_on: true
+      tenant_id: os.environ/AGENT365_TENANT_ID
+      client_id: os.environ/AGENT365_CLIENT_ID
+      client_secret: os.environ/AGENT365_CLIENT_SECRET
+
+mcp_servers:
+  deepwiki:
+    transport: http
+    url: https://mcp.deepwiki.com/mcp
+
 litellm_settings:
   enable_azure_ad_token_refresh: true
   drop_params: true

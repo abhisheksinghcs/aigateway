@@ -24,6 +24,14 @@ az aks get-credentials \
 
 kubectl apply -f "$repo_root/kubernetes/namespace.yaml"
 
+if ! kubectl get secret litellm-agent365 --namespace "$namespace" >/dev/null 2>&1; then
+  cat >&2 <<EOF
+The Kubernetes Secret litellm-agent365 does not exist.
+Run scripts/configure-agent365-secret.sh before deploying this configuration.
+EOF
+  exit 1
+fi
+
 kubectl create configmap litellm-config \
   --namespace "$namespace" \
   --from-file=config.yaml="$repo_root/litellm/config.yaml" \

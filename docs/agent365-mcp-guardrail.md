@@ -2,21 +2,16 @@
 
 Last verified: 2026-10-12
 
-This guide records the proposed Microsoft Agent 365 guardrail design for the
+This guide records the Microsoft Agent 365 guardrail design for the
 LiteLLM gateway. It distinguishes the LiteLLM quick start from the additional
 work required to connect a Copilot Studio agent.
 
-No Agent 365 guardrail configuration is currently deployed. LiteLLM `1.105.0`
-was selected as the pinned upgrade because its released source contains the
-documented `agent_365` implementation. The guardrail configuration and
-credentials remain a separate rollout after the base gateway upgrade is
-validated.
-
-The base upgrade completed on 2026-10-12 as Helm revision 6. Runtime
-verification confirmed LiteLLM `1.105.0`, `Agent365Guardrail`, and the
-`pre_mcp_call` hook. Database migrations, admin authentication, and
-`customer-chat` inference passed. Helm revision 5 remains the superseded
-`1.90.2` rollback point.
+LiteLLM `1.105.0` was selected because its released source contains the
+documented `agent_365` implementation. The base upgrade completed as Helm
+revision 6. The Agent 365 and DeepWiki configuration completed as revision 7.
+Runtime verification confirmed `Agent365Guardrail`, `pre_mcp_call`, DeepWiki
+tool discovery, delegated OBO evaluation, and unchanged `customer-chat`
+inference. Revision 6 is the pre-guardrail rollback point.
 
 ## What the Guardrail Protects
 
@@ -297,57 +292,48 @@ echo disabled, create or update the Kubernetes Secret without printing it, and
 unset the shell variable immediately. The value must not be passed with Helm
 `--set`, because Helm would retain it in release state.
 
-The intended one-time POC procedure is:
+The intended one-time POC procedure is implemented by
+`scripts/configure-agent365-secret.sh`. Run it from a trusted local terminal:
 
 ```bash
-read -rsp "Rotated Agent 365 client secret: " AGENT365_CLIENT_SECRET
-printf '\n'
-
-printf '%s\n' \
-  'AGENT365_TENANT_ID=<tenant-id>' \
-  'AGENT365_CLIENT_ID=<gateway-client-id>' \
-  "AGENT365_CLIENT_SECRET=${AGENT365_CLIENT_SECRET}" |
-  kubectl create secret generic litellm-agent365 \
-    --namespace litellm \
-    --from-env-file=/dev/stdin \
-    --dry-run=client \
-    --output yaml |
-  kubectl apply -f -
-
-unset AGENT365_CLIENT_SECRET
+AGENT365_TENANT_ID=<tenant-id> \
+AGENT365_CLIENT_ID=<gateway-client-id> \
+APPROVE_KUBERNETES_CHANGES=yes \
+./scripts/configure-agent365-secret.sh
 ```
 
-Run this only from a trusted terminal with shell tracing disabled. Replace the
-two identifier placeholders locally; never put the secret value directly in
-the command text. Before using this procedure, the deployment script and
-target Kubernetes context will be reviewed and explicit mutation approval will
-be obtained.
+The script disables shell tracing, prompts for the rotated value with terminal
+echo disabled, streams it to `kubectl` through standard input, and unsets it.
+Replace the two identifier placeholders locally; never put the secret value
+directly in the command text or an environment variable.
 
 For this POC, Kubernetes Secret storage is acceptable with the documented
 tradeoff that Kubernetes Secrets are base64-encoded API objects, not an
 external secrets vault. Production should use an approved secret manager such
 as Azure Key Vault with workload identity and the Secrets Store CSI Driver.
 
-## Validation Plan
+## Validation Results
 
-1. Rotate and revoke the exposed Entra client secret.
-2. Use the validated, pinned LiteLLM `1.105.0` chart and image.
-3. Add the environment Secret reference and proposed configuration.
-4. Render and lint the merged Helm release locally.
-5. Obtain explicit approval before changing Kubernetes.
-6. Roll out the Agent 365 configuration and verify readiness.
-7. Confirm the `deepwiki` MCP server is registered.
-8. Create the `deepwiki`-restricted virtual key.
-9. Obtain a delegated test-user token with the correct audience and scope.
-10. Call `/mcp-rest/tools/call` through a local port-forward with both headers.
-11. Verify an allowed call reaches DeepWiki.
-12. Verify a blocked or unevaluated call does not reach DeepWiki.
-13. Correlate the LiteLLM log and Agent 365 record.
-14. Rerun `customer-chat` inference to prove chat behavior is unchanged.
-15. Separately choose and validate a Copilot Studio integration pattern.
+Completed on 2026-10-12:
 
-Public ingress is not required for the local MVP test. It is required before a
-hosted Copilot Studio agent can call the gateway.
+1. The exposed Entra client secret was rotated and the replacement was entered through the hidden-prompt helper.
+2. Helm lint/render passed with LiteLLM `1.105.0`.
+3. Helm revision 7 deployed with one Ready LiteLLM pod and Ready PostgreSQL.
+4. `agent365-mcp` initialized as default-on, fail-closed `pre_mcp_call`.
+5. DeepWiki registered and exposed three tools.
+6. The delegated test-user token had the gateway API audience and `access_as_user`.
+7. A temporary DeepWiki-scoped key completed `read_wiki_structure` with HTTP 200.
+8. The database recorded `agent365-mcp`, `call_mcp_tool`, and `success` for the guarded request.
+9. A request without the delegated user token was refused with HTTP 401 before tool execution.
+10. Both temporary validation keys were deleted.
+11. `customer-chat` inference still returned `LiteLLM gateway path verified.`
+
+An administrator-configured Microsoft Defender policy block has not yet been
+tested. That validation requires an approved blocking policy and should be
+distinguished from the successful allow path and missing-token refusal.
+
+Public ingress was not required for the local MVP test. It is required before
+a hosted Copilot Studio agent can call the gateway.
 
 ## References
 

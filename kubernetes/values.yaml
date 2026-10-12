@@ -40,6 +40,9 @@ proxyConfigMap:
   name: litellm-config
   key: config.yaml
 
+environmentSecrets:
+  - litellm-agent365
+
 resources:
   requests:
     cpu: 500m
