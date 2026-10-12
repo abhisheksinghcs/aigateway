@@ -1,6 +1,6 @@
 # AI Gateway Lab Status
 
-Last updated: 2026-10-12 12:00 EDT
+Last updated: 2026-10-12 12:32 EDT
 
 ## Current State
 
@@ -119,6 +119,9 @@ The approved POC is deployed and functionally verified. Azure infrastructure and
 - DeepWiki was selected as the MVP MCP server.
 - `customer-chat` is a LiteLLM model alias deployed in the gateway ConfigMap, not a separate application.
 - The LiteLLM quick start's two-header flow is not a direct match for the Copilot Studio MCP wizard, which selects one server authentication method. The CLI MVP validated both headers; Copilot Studio still requires a choice between LiteLLM JWT authentication or OAuth plus a custom virtual-key header.
+- The Copilot Studio manual OAuth form may use the existing gateway application ID for this POC because one Entra registration can act as both OAuth client and resource API. Copilot Studio must use a new, dedicated secret credential on that registration and must not reuse the Kubernetes-stored Agent 365/OBO secret.
+- A separate Copilot Studio client registration remains the production recommendation because it isolates redirect URIs, delegated consent, credentials, audit events, and rotation from LiteLLM's confidential OBO identity.
+- Manual OAuth values are documented in `docs/agent365-mcp-guardrail.md`, including the tenant-specific authorize/token endpoints, gateway `access_as_user` scope, and post-create Web redirect-URI step.
 - The key alias is correlation metadata sent by LiteLLM as the Agent 365 evaluation's agent ID. It does not require the Copilot Studio agent to use the same display name.
 - The user confirmed on 2026-10-12 that the previously exposed Agent 365 application client secret was rotated. The replacement value has not been shared or stored in the repository. Never copy it into Git, Helm values, `config.yaml`, `status.md`, logs, or shell history.
 - The proposed configuration uses only `os.environ/AGENT365_TENANT_ID`, `os.environ/AGENT365_CLIENT_ID`, and `os.environ/AGENT365_CLIENT_SECRET` references. The values must be injected from a Kubernetes Secret without storing the secret in Helm release state.
@@ -137,7 +140,7 @@ The approved POC is deployed and functionally verified. Azure infrastructure and
 
 ## Next Step
 
-The next build item is the Copilot Studio connectivity layer. Public MCP ingress remediation is currently in progress:
+The next build item is the Copilot Studio authentication connection:
 
 1. [x] Add an infrastructure-managed subnet NSG allow rule for public HTTP/HTTPS traffic to the AKS ingress load balancer.
 2. [x] Replace the incomplete public `/v1` ingress path with LiteLLM's streamable HTTP `/mcp` route while keeping `/ui` private.

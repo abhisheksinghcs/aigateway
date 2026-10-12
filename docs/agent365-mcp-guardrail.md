@@ -118,6 +118,84 @@ Copilot Studio's standard MCP onboarding wizard selects one server
 authentication method: None, API key, or OAuth 2.0. Therefore, the quick-start
 curl flow must not be assumed to work unchanged in Copilot Studio.
 
+### Copilot Studio Manual OAuth Configuration
+
+The POC uses the public MCP server URL:
+
+```text
+https://57.167.155.123.nip.io/mcp
+```
+
+Select **OAuth 2.0** and **Manual** in the Copilot Studio MCP onboarding
+wizard. The LiteLLM deployment is not configured for OAuth Dynamic Client
+Registration, so do not select **Dynamic discovery** or **Dynamic**.
+
+Use these tenant-specific values:
+
+| Field | Value |
+|-------|-------|
+| Authorization URL | `https://login.microsoftonline.com/e0ca6a1b-554d-4f12-87c9-92ec42abb750/oauth2/v2.0/authorize` |
+| Token URL template | `https://login.microsoftonline.com/e0ca6a1b-554d-4f12-87c9-92ec42abb750/oauth2/v2.0/token` |
+| Refresh URL | `https://login.microsoftonline.com/e0ca6a1b-554d-4f12-87c9-92ec42abb750/oauth2/v2.0/token` |
+| Scopes | `api://18f77e7f-8bf9-4f43-b014-e2168b6c5574/access_as_user offline_access openid profile` |
+
+Copilot Studio generates a redirect URL after the MCP server definition is
+created. Register that URL as a **Web** redirect URI on the Entra application
+used as the OAuth client.
+
+#### Combined App Registration for the POC
+
+An OAuth flow always has a client and a resource API even when the client calls
+the API directly:
+
+```text
+User -> Copilot Studio OAuth client -> Entra token for the gateway API
+     -> LiteLLM -> Agent 365 OBO exchange
+```
+
+For this POC, the existing gateway application registration can perform both
+logical roles:
+
+- OAuth client used by Copilot Studio.
+- Resource API that exposes `access_as_user` and receives the delegated token.
+- Confidential middle-tier application that performs the Agent 365 OBO
+  exchange.
+
+The existing application/client ID is therefore valid in the Copilot Studio
+manual OAuth form:
+
+```text
+18f77e7f-8bf9-4f43-b014-e2168b6c5574
+```
+
+Create a separate client-secret credential on that registration specifically
+for Copilot Studio, for example with description `Copilot Studio MCP OAuth`.
+Store that value only in the Copilot Studio connection. Do not reuse or copy
+the Agent 365/OBO secret stored in Kubernetes. Separate credentials allow the
+Copilot Studio credential and the LiteLLM OBO credential to be revoked and
+rotated independently even though they represent the same application.
+
+#### Why a Separate Registration Is Preferred for Production
+
+A dedicated Copilot Studio client registration is not required for this POC,
+but it is the recommended production boundary:
+
+- Copilot Studio cannot authenticate as the gateway's confidential
+  middle-tier application.
+- Power Platform redirect URIs are isolated from the gateway identity.
+- Delegated API permissions and consent are explicit between the client and
+  the gateway resource API.
+- Entra sign-in and audit logs clearly distinguish Copilot Studio from
+  LiteLLM.
+- Compromise or revocation of the Copilot Studio credential does not affect
+  LiteLLM's OBO credential or identity.
+- Credential ownership, expiration, and rotation can follow separate
+  operational lifecycles.
+
+With separate registrations, the Copilot Studio client receives delegated
+`access_as_user` permission to the existing gateway API. Entra still issues a
+token whose audience is the gateway application.
+
 Two integration patterns are possible:
 
 ### Pattern A: OAuth-only LiteLLM JWT authentication

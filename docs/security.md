@@ -12,6 +12,18 @@ For the proposed Agent 365 MCP guardrail, the delegated user Entra token and Lit
 
 Environment-credential login to the Admin UI is disabled after two database-backed `proxy_admin` users with passwords were verified and a personal administrator login succeeded. The master key remains available for authenticated management API recovery but is rejected by the UI login form.
 
+### Copilot Studio OAuth Identity
+
+The POC permits the existing gateway Entra application to act as both the
+Copilot Studio OAuth client and the LiteLLM resource API. Copilot Studio must
+use a dedicated client-secret credential on that registration; it must not
+reuse the Agent 365/OBO secret stored in Kubernetes.
+
+Production should use a separate Copilot Studio client registration with
+delegated `access_as_user` permission to the gateway API. This isolates Power
+Platform redirect URIs, credentials, consent, audit events, and credential
+rotation from LiteLLM's confidential OBO identity.
+
 ### Downstream Authentication
 
 LiteLLM authenticates to Azure AI Services using Microsoft Entra Workload Identity:
