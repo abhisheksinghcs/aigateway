@@ -41,24 +41,27 @@ helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
   --version 4.15.1 \
   --namespace ingress-nginx \
   --create-namespace \
-  --set controller.replicaCount=2 \
-  --set controller.metrics.enabled=true \
-  --set controller.service.externalTrafficPolicy=Cluster \
-  --set-string 'controller.service.annotations.service\.beta\.kubernetes\.io/azure-load-balancer-health-probe-request-path=/healthz' \
+  --values "$repo_root/kubernetes/ingress-nginx-values.yaml" \
   --wait \
   --timeout 10m
 
-helm upgrade --install cert-manager jetstack/cert-manager \
-  --version v1.21.2 \
-  --namespace cert-manager \
-  --create-namespace \
-  --set crds.enabled=true \
-  --wait \
-  --timeout 10m
+if ! helm status cert-manager --namespace cert-manager >/dev/null 2>&1; then
+  helm install cert-manager jetstack/cert-manager \
+    --version v1.21.2 \
+    --namespace cert-manager \
+    --create-namespace \
+    --set crds.enabled=true \
+    --wait \
+    --timeout 10m
+fi
 
 kubectl apply \
   -f "$repo_root/kubernetes/cluster-issuer.yaml" \
   -f "$repo_root/kubernetes/public-ingress.yaml"
+
+hostname="$(kubectl get ingress litellm-public \
+  --namespace "$namespace" \
+  --output jsonpath='{.spec.rules[0].host}')"
 
 kubectl wait \
   --for=condition=Ready \
@@ -66,8 +69,22 @@ kubectl wait \
   --namespace "$namespace" \
   --timeout 10m
 
-hostname="$(kubectl get ingress litellm-public \
-  --namespace "$namespace" \
-  --output jsonpath='{.spec.rules[0].host}')"
+certificate_matches_hostname=false
+for _ in $(seq 1 150); do
+  if kubectl get secret litellm-public-tls \
+    --namespace "$namespace" \
+    --output jsonpath='{.data.tls\.crt}' |
+    base64 --decode |
+    openssl x509 -noout -checkhost "$hostname" >/dev/null 2>&1; then
+    certificate_matches_hostname=true
+    break
+  fi
+  sleep 2
+done
+
+if [[ "$certificate_matches_hostname" != "true" ]]; then
+  printf 'The issued certificate does not cover %s.\\n' "$hostname" >&2
+  exit 1
+fi
 
 printf 'LiteLLM MCP ingress is ready: https://%s/mcp\n' "$hostname"

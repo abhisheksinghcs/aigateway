@@ -123,7 +123,7 @@ curl flow must not be assumed to work unchanged in Copilot Studio.
 The POC uses the public MCP server URL:
 
 ```text
-https://57.167.155.123.nip.io/mcp
+https://litellm-agent365-mcp-d18f2ff3.eastus2.cloudapp.azure.com/mcp
 ```
 
 Select **OAuth 2.0** and **Manual** in the Copilot Studio MCP onboarding
@@ -233,7 +233,7 @@ the virtual-key alias in Agent 365 evaluations.
 The POC exposes LiteLLM's streamable HTTP MCP endpoint at:
 
 ```text
-https://57.167.155.123.nip.io/mcp
+https://litellm-agent365-mcp-d18f2ff3.eastus2.cloudapp.azure.com/mcp
 ```
 
 The endpoint uses a publicly trusted Let's Encrypt certificate. The ingress
@@ -245,9 +245,16 @@ an ingress-level HTTP 404. An unauthenticated `/mcp` request reaches LiteLLM
 and returns HTTP 401, proving that the public route is live without weakening
 gateway authentication.
 
-The `nip.io` hostname is suitable for this POC, not production. Replace it
-with customer-owned DNS and a corresponding certificate before a production
-rollout.
+The Azure-managed `cloudapp.azure.com` hostname is suitable for this POC, not
+production. Replace it with customer-owned DNS and a corresponding certificate
+before a production rollout.
+
+The original `57.167.155.123.nip.io` hostname was publicly reachable but
+Microsoft Entra Internet Access blocked it before Copilot Studio could contact
+the gateway. The denial classified the destination as
+`ComputersAndTechnology, IllegalSoftware`. No Copilot discovery request reached
+ingress-nginx. The Azure-managed hostname removes the third-party wildcard-DNS
+dependency and avoids that specific policy classification.
 
 The Azure Load Balancer initially timed out because the AKS subnet NSG denied
 public ports 80 and 443 even though the AKS-managed NIC NSG had the correct

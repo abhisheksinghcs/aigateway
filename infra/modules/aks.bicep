@@ -94,6 +94,103 @@ resource aksAdminRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if 
   }
 }
 
+resource containerInsightsDcr 'Microsoft.Insights/dataCollectionRules@2023-03-11' = {
+  name: 'MSCI-${location}-${aksName}'
+  location: location
+  kind: 'Linux'
+  tags: tags
+  properties: {
+    dataSources: {
+      extensions: [
+        {
+          extensionName: 'ContainerInsights'
+          extensionSettings: {
+            dataCollectionSettings: {
+              enableContainerLogV2: true
+            }
+          }
+          name: 'ContainerInsightsExtension'
+          streams: [
+            'Microsoft-ContainerInsights-Group-Default'
+          ]
+        }
+      ]
+    }
+    destinations: {
+      logAnalytics: [
+        {
+          name: 'la-workspace'
+          workspaceResourceId: logAnalyticsWorkspaceId
+        }
+      ]
+    }
+    dataFlows: [
+      {
+        streams: [
+          'Microsoft-ContainerInsights-Group-Default'
+        ]
+        destinations: [
+          'la-workspace'
+        ]
+      }
+    ]
+  }
+}
+
+resource containerInsightsAssociation 'Microsoft.Insights/dataCollectionRuleAssociations@2023-03-11' = {
+  name: 'ContainerInsightsExtension'
+  scope: aks
+  properties: {
+    dataCollectionRuleId: containerInsightsDcr.id
+    description: 'Associates the Container Insights data collection rule with AKS.'
+  }
+}
+
+resource controlPlaneDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'aks-control-plane'
+  scope: aks
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logAnalyticsDestinationType: 'Dedicated'
+    logs: [
+      {
+        category: 'kube-apiserver'
+        enabled: true
+      }
+      {
+        category: 'kube-audit-admin'
+        enabled: true
+      }
+      {
+        category: 'kube-controller-manager'
+        enabled: true
+      }
+      {
+        category: 'kube-scheduler'
+        enabled: true
+      }
+      {
+        category: 'cluster-autoscaler'
+        enabled: true
+      }
+      {
+        category: 'cloud-controller-manager'
+        enabled: true
+      }
+      {
+        category: 'guard'
+        enabled: true
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
+  }
+}
+
 output aksName string = aks.name
 output aksResourceId string = aks.id
 output oidcIssuerUrl string = aks.properties.oidcIssuerProfile.issuerURL!

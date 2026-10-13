@@ -1,0 +1,9 @@
+controller:
+  replicaCount: 2
+  metrics:
+    enabled: true
+  service:
+    externalTrafficPolicy: Cluster
+    annotations:
+      service.beta.kubernetes.io/azure-dns-label-name: litellm-agent365-mcp-d18f2ff3
+      service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz

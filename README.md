@@ -20,7 +20,7 @@ The POC includes a bundled single-node PostgreSQL instance so the LiteLLM admin 
 
 Repository artifacts may be generated and validated locally. No Azure deployment, Azure RBAC change, Helm installation, or destructive operation is authorized unless it is separately explained and explicitly approved.
 
-The source-of-truth plan is [.azure/deployment-plan.md](.azure/deployment-plan.md). The cross-session handoff is [status.md](status.md). The proposed Microsoft Agent 365 MCP integration and its Copilot Studio caveats are documented in [docs/agent365-mcp-guardrail.md](docs/agent365-mcp-guardrail.md).
+The source-of-truth plan is [.azure/deployment-plan.md](.azure/deployment-plan.md). The cross-session handoff is [status.md](status.md). The proposed Microsoft Agent 365 MCP integration and its Copilot Studio caveats are documented in [docs/agent365-mcp-guardrail.md](docs/agent365-mcp-guardrail.md). The Foundry hosted-agent middleware identity and token flow are documented in [docs/foundry-middleware.md](docs/foundry-middleware.md). AKS deallocation diagnostics, alerts, and investigation queries are documented in [docs/aks-observability.md](docs/aks-observability.md).
 
 ## Repository Layout
 
@@ -52,7 +52,7 @@ helm template litellm \
 The approved POC scope is deployed and functionally verified. The MCP endpoint is:
 
 ```text
-https://57.167.155.123.nip.io/mcp
+https://litellm-agent365-mcp-d18f2ff3.eastus2.cloudapp.azure.com/mcp
 ```
 
 An unauthenticated request returns HTTP 401 from LiteLLM. The Admin UI remains private and is accessed with a local port-forward:
@@ -63,4 +63,4 @@ kubectl port-forward -n litellm service/litellm 4000:4000
 
 Run `scripts/status.sh` for current Azure and Kubernetes state. See [status.md](status.md) for the deployment handoff and known operational notes.
 
-See [docs/architecture.md](docs/architecture.md), [docs/security.md](docs/security.md), and [docs/agent365-mcp-guardrail.md](docs/agent365-mcp-guardrail.md) for design details.
+See [docs/architecture.md](docs/architecture.md), [docs/security.md](docs/security.md), [docs/agent365-mcp-guardrail.md](docs/agent365-mcp-guardrail.md), [docs/foundry-middleware.md](docs/foundry-middleware.md), and [docs/aks-observability.md](docs/aks-observability.md) for design details.

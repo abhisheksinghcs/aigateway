@@ -15,10 +15,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - 57.167.155.123.nip.io
+        - litellm-agent365-mcp-d18f2ff3.eastus2.cloudapp.azure.com
       secretName: litellm-public-tls
   rules:
-    - host: 57.167.155.123.nip.io
+    - host: litellm-agent365-mcp-d18f2ff3.eastus2.cloudapp.azure.com
       http:
         paths:
           - path: /mcp

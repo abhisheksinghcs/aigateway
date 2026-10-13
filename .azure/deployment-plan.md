@@ -155,7 +155,7 @@ These ranges do not overlap one another. Connectivity to an enterprise hub or on
 | Central logs | Log Analytics | Pay-as-you-go, 30-day retention target | 1 |
 | Gateway | LiteLLM | Monolithic official Helm chart | 2 |
 | Initial entry point | Kubernetes ClusterIP plus local port-forward | Private administrative access | 2 |
-| MCP entry point | NGINX HTTPS ingress with Let's Encrypt and temporary `nip.io` DNS | Exposes only authenticated `/mcp`; customer-owned DNS remains a production requirement | 7 |
+| MCP entry point | NGINX HTTPS ingress with Let's Encrypt and temporary Azure-managed DNS | Exposes only authenticated `/mcp`; customer-owned DNS remains a production requirement | 7 |
 | Model | Existing Azure AI Services deployment | `o4-mini`, GlobalStandard | 3 |
 | Secrets hardening | Key Vault | Standard, RBAC, public access disabled, private endpoint | 5 |
 | Persistent gateway state | PostgreSQL Flexible Server | Cost-conscious burstable SKU selected in Phase 6 | 6 |
@@ -372,6 +372,8 @@ This command will create or update the dedicated resource group and the resource
 | MCP ingress Azure deployment | Approval-gated `scripts/deploy-infra.sh` | Pass: subscription deployment succeeded; subnet NSG rule provisioned; public HTTP reached ingress-nginx | 2026-10-12 11:58 EDT |
 | MCP ingress TLS and route validation | Certificate readiness, trusted `curl`, OpenSSL certificate inspection, and ingress boundary requests | Pass: Let's Encrypt certificate Ready; `/mcp` returns LiteLLM HTTP 401; `/ui` and `/v1` return ingress HTTP 404 | 2026-10-12 11:59 EDT |
 | MCP ingress post-deployment regression | Bicep build/lint, shell syntax, Kubernetes health, live RBAC, and `scripts/test-gateway.sh` | Pass: all workloads Ready, required roles present, and `customer-chat` returned `LiteLLM gateway path verified.` | 2026-10-12 12:00 EDT |
+| Copilot hostname policy diagnosis | Copilot connector details, ingress logs, AKS baseline, and Entra Internet Access denial page | Root cause: `nip.io` blocked before AKS as `ComputersAndTechnology, IllegalSoftware`; no Copilot request reached ingress | 2026-10-12 12:39 EDT |
+| Azure-managed MCP hostname migration | ingress-nginx DNS-label annotation, trusted `curl`, OpenSSL certificate inspection, certificate/order readiness, and route-boundary checks | Pass: Azure DNS resolves to the existing public IP; certificate matches; `/mcp` returns LiteLLM HTTP 401; `/ui` and `/v1` return HTTP 404 | 2026-10-12 12:43 EDT |
 
 **Validated by:** azure-validate workflow
 

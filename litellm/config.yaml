@@ -29,3 +29,15 @@ litellm_settings:
 general_settings:
   master_key: os.environ/PROXY_MASTER_KEY
   disable_env_credential_login: true
+  enable_jwt_auth: true
+  use_x_forwarded_for: true
+  mcp_trusted_proxy_ranges:
+    - 10.244.0.0/16
+  mcp_xff_num_trusted_hops: 1
+  litellm_jwtauth:
+    issuers:
+      - issuer: https://sts.windows.net/e0ca6a1b-554d-4f12-87c9-92ec42abb750/
+        jwks_url: https://login.microsoftonline.com/e0ca6a1b-554d-4f12-87c9-92ec42abb750/discovery/v2.0/keys
+        audience: api://18f77e7f-8bf9-4f43-b014-e2168b6c5574
+        team_id_jwt_field: appid
+        user_id_jwt_field: oid

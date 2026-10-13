@@ -5,6 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 deployment_name="${DEPLOYMENT_NAME:-litellm-gateway-demo}"
 location="${AZURE_LOCATION:-eastus2}"
 principal_id="$(az ad signed-in-user show --query id --output tsv)"
+alert_email="$(az account show --query user.name --output tsv)"
 
 "$repo_root/scripts/prerequisites.sh"
 
@@ -16,7 +17,7 @@ RBAC assignments declared in infra/main.bicep:
 az deployment sub create --name "$deployment_name" --location "$location" \
   --template-file "$repo_root/infra/main.bicep" \
   --parameters "$repo_root/infra/parameters/demo.bicepparam" \
-  --parameters aksAdminPrincipalId="$principal_id"
+  --parameters aksAdminPrincipalId="$principal_id" alertEmail="$alert_email"
 
 Run the subscription deployment only after reviewing a successful validation and
 what-if result and receiving explicit approval in the active session.
@@ -32,4 +33,4 @@ az deployment sub create \
   --location "$location" \
   --template-file "$repo_root/infra/main.bicep" \
   --parameters "$repo_root/infra/parameters/demo.bicepparam" \
-  --parameters aksAdminPrincipalId="$principal_id"
+  --parameters aksAdminPrincipalId="$principal_id" alertEmail="$alert_email"

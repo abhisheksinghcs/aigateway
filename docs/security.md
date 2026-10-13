@@ -62,7 +62,7 @@ No Azure AI API key or client secret is required.
 ## Deferred Hardening
 
 - Private Key Vault endpoint and Secrets Store CSI integration
-- Customer-owned production DNS and certificate to replace the temporary `nip.io` hostname
+- Customer-owned production DNS and certificate to replace the temporary Azure-managed `cloudapp.azure.com` hostname
 - Private Azure AI endpoint and private DNS
 - Restricted egress through an approved enterprise path
 - PostgreSQL with Microsoft Entra authentication where supported by LiteLLM
