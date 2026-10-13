@@ -1,0 +1,199 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "vmssResourceId": {
+      "type": "String"
+    }
+  },
+  "triggers": {
+    "Node_not_ready_alert": {
+      "type": "Request",
+      "kind": "Http",
+      "inputs": {
+        "schema": {
+          "type": "object"
+        }
+      }
+    }
+  },
+  "actions": {
+    "Wait_before_recovery": {
+      "type": "Wait",
+      "inputs": {
+        "interval": {
+          "count": 5,
+          "unit": "Minute"
+        }
+      },
+      "runAfter": {}
+    },
+    "Get_VMSS_instances": {
+      "type": "Http",
+      "inputs": {
+        "authentication": {
+          "audience": "https://management.azure.com/",
+          "type": "ManagedServiceIdentity"
+        },
+        "method": "GET",
+        "uri": "@{concat('https://management.azure.com', parameters('vmssResourceId'), '/virtualMachines?api-version=2024-11-01&$expand=instanceView')}"
+      },
+      "runAfter": {
+        "Wait_before_recovery": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Filter_deallocated_instances": {
+      "type": "Query",
+      "inputs": {
+        "from": "@body('Get_VMSS_instances')?['value']",
+        "where": "@contains(string(item()?['properties']?['instanceView']?['statuses']), 'PowerState/deallocated')"
+      },
+      "runAfter": {
+        "Get_VMSS_instances": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Recovery_required": {
+      "type": "If",
+      "expression": {
+        "and": [
+          {
+            "greater": [
+              "@length(body('Filter_deallocated_instances'))",
+              0
+            ]
+          }
+        ]
+      },
+      "actions": {
+        "Select_instance_IDs": {
+          "type": "Select",
+          "inputs": {
+            "from": "@body('Filter_deallocated_instances')",
+            "select": "@item()?['instanceId']"
+          }
+        },
+        "Start_deallocated_instances": {
+          "type": "Http",
+          "inputs": {
+            "authentication": {
+              "audience": "https://management.azure.com/",
+              "type": "ManagedServiceIdentity"
+            },
+            "body": {
+              "instanceIds": "@body('Select_instance_IDs')"
+            },
+            "method": "POST",
+            "uri": "@{concat('https://management.azure.com', parameters('vmssResourceId'), '/start?api-version=2024-11-01')}"
+          },
+          "runAfter": {
+            "Select_instance_IDs": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Wait_for_start": {
+          "type": "Wait",
+          "inputs": {
+            "interval": {
+              "count": 3,
+              "unit": "Minute"
+            }
+          },
+          "runAfter": {
+            "Start_deallocated_instances": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Verify_VMSS_instances": {
+          "type": "Http",
+          "inputs": {
+            "authentication": {
+              "audience": "https://management.azure.com/",
+              "type": "ManagedServiceIdentity"
+            },
+            "method": "GET",
+            "uri": "@{concat('https://management.azure.com', parameters('vmssResourceId'), '/virtualMachines?api-version=2024-11-01&$expand=instanceView')}"
+          },
+          "runAfter": {
+            "Wait_for_start": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Filter_still_deallocated_instances": {
+          "type": "Query",
+          "inputs": {
+            "from": "@body('Verify_VMSS_instances')?['value']",
+            "where": "@contains(string(item()?['properties']?['instanceView']?['statuses']), 'PowerState/deallocated')"
+          },
+          "runAfter": {
+            "Verify_VMSS_instances": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Recovery_failed": {
+          "type": "If",
+          "expression": {
+            "and": [
+              {
+                "greater": [
+                  "@length(body('Filter_still_deallocated_instances'))",
+                  0
+                ]
+              }
+            ]
+          },
+          "actions": {
+            "Terminate_failed": {
+              "type": "Terminate",
+              "inputs": {
+                "runError": {
+                  "code": "InstancesStillDeallocated",
+                  "message": "One or more AKS VMSS instances remain deallocated after the single recovery attempt."
+                },
+                "runStatus": "Failed"
+              }
+            }
+          },
+          "else": {
+            "actions": {
+              "Recovery_succeeded": {
+                "type": "Compose",
+                "inputs": {
+                  "result": "All targeted AKS VMSS instances left the deallocated power state."
+                }
+              }
+            }
+          },
+          "runAfter": {
+            "Filter_still_deallocated_instances": [
+              "Succeeded"
+            ]
+          }
+        }
+      },
+      "else": {
+        "actions": {
+          "Recovery_not_required": {
+            "type": "Compose",
+            "inputs": {
+              "result": "No deallocated AKS VMSS instance was present after the safety delay."
+            }
+          }
+        }
+      },
+      "runAfter": {
+        "Filter_deallocated_instances": [
+          "Succeeded"
+        ]
+      }
+    }
+  },
+  "outputs": {}
+}

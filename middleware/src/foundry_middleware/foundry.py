@@ -1,3 +1,10 @@
+"""Acquire the middleware workload token and invoke the hosted Foundry agent.
+
+This module keeps workload authentication separate from delegated user context,
+adds only the trusted forwarding headers, and sanitizes upstream failures before
+they return to the public API.
+"""
+
 from typing import Any, Protocol
 
 import httpx
@@ -36,14 +43,18 @@ class WorkloadIdentityTokenProvider:
         settings: Settings,
         credential: DefaultAzureCredential | None = None,
     ) -> None:
+        # Bind workload authentication to Foundry's resource scope. Tests can inject
+        # a fake credential; AKS uses the projected workload-identity token.
         self._scope = settings.foundry_scope
         self._credential = credential or DefaultAzureCredential()
 
     async def get_token(self) -> str:
+        # Stage 1: authenticate the middleware workload, not the represented user.
         token: AccessToken = await self._credential.get_token(self._scope)
         return token.token
 
     async def close(self) -> None:
+        # DefaultAzureCredential owns async transports that must close at shutdown.
         await self._credential.close()
 
 
@@ -56,6 +67,8 @@ class FoundryClient:
         http_client: httpx.AsyncClient,
         token_provider: FoundryTokenProvider,
     ) -> None:
+        # Stage 2: fix the downstream destination at startup. A caller or model can
+        # never choose a URL that receives either token.
         self._endpoint = str(settings.foundry_responses_endpoint)
         self._http_client = http_client
         self._token_provider = token_provider
@@ -66,6 +79,7 @@ class FoundryClient:
         delegated_token: str,
         user_object_id: str,
     ) -> dict[str, Any]:
+        # Stage 3: acquire a fresh workload token for this Foundry invocation.
         workload_token = await self._token_provider.get_token()
         # These values serve separate trust purposes: Authorization authenticates the
         # middleware workload, x-client-* transports the OBO token to agent code, and
@@ -80,6 +94,8 @@ class FoundryClient:
             json=payload,
         )
 
+        # Stage 4: accept only a successful JSON object. Preserve a correlation ID
+        # for operations without reflecting an arbitrary upstream response body.
         if response.is_error:
             # Return only status and request correlation. Do not reflect an upstream
             # body that might contain tenant details or token-related diagnostics.
@@ -101,4 +117,5 @@ class FoundryClient:
                 status_code=502,
                 request_id=response.headers.get("x-ms-request-id"),
             )
+        # Only the hosted-agent response body is returned; neither token is included.
         return body

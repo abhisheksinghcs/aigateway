@@ -2,6 +2,10 @@ param location string
 param workspaceId string
 param nodeResourceGroupId string
 param alertEmail string = ''
+param enableNodeAutoRecovery bool = false
+param autoRecoveryLogicAppId string = ''
+@secure()
+param autoRecoveryCallbackUrl string = ''
 param tags object
 
 resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
@@ -20,6 +24,24 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
             useCommonAlertSchema: true
           }
         ]
+  }
+}
+
+resource autoRecoveryActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (enableNodeAutoRecovery) {
+  name: 'litellm-aks-auto-recovery'
+  location: 'global'
+  tags: tags
+  properties: {
+    groupShortName: 'aks-recover'
+    enabled: true
+    logicAppReceivers: [
+      {
+        name: 'guarded-node-recovery'
+        resourceId: autoRecoveryLogicAppId
+        callbackUrl: autoRecoveryCallbackUrl
+        useCommonAlertSchema: true
+      }
+    ]
   }
 }
 
@@ -177,11 +199,19 @@ resource nodeNotReadyAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-pr
     }
     autoMitigate: true
     actions: {
-      actionGroups: [
-        actionGroup.id
-      ]
+      actionGroups: union(
+        [
+          actionGroup.id
+        ],
+        enableNodeAutoRecovery
+          ? [
+              autoRecoveryActionGroup.id
+            ]
+          : []
+      )
     }
   }
 }
 
 output actionGroupId string = actionGroup.id
+output autoRecoveryActionGroupId string = enableNodeAutoRecovery ? autoRecoveryActionGroup.id : ''

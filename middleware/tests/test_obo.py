@@ -1,3 +1,9 @@
+"""Verify the Microsoft Entra on-behalf-of token exchange boundary.
+
+The tests confirm the validated user assertion and fixed downstream scope reach
+MSAL correctly and that token and claims-challenge failures remain explicit.
+"""
+
 import pytest
 
 from foundry_middleware.config import Settings

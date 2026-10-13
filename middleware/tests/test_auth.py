@@ -1,3 +1,9 @@
+"""Verify Entra JWT validation and signing-key cache behavior.
+
+The tests create real RSA-signed JWTs to cover issuer, audience, tenant, user,
+scope, and JWKS rotation checks rather than mocking cryptographic validation.
+"""
+
 import base64
 import time
 from typing import Any
@@ -21,13 +27,15 @@ def base64url_uint(value: int) -> str:
     return base64.urlsafe_b64encode(value.to_bytes(width, "big")).rstrip(b"=").decode()
 
 
-def make_signing_material() -> tuple[rsa.RSAPrivateKey, dict[str, str]]:
+def make_signing_material(
+    key_id: str = KEY_ID,
+) -> tuple[rsa.RSAPrivateKey, dict[str, str]]:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     public_numbers = private_key.public_key().public_numbers()
     jwk = {
         "kty": "RSA",
         "use": "sig",
-        "kid": KEY_ID,
+        "kid": key_id,
         "alg": "RS256",
         "n": base64url_uint(public_numbers.n),
         "e": base64url_uint(public_numbers.e),
@@ -54,6 +62,7 @@ def issue_token(
     scopes: str = "access_as_user",
     audience: str = CLIENT_ID,
     tenant_id: str = TENANT_ID,
+    key_id: str = KEY_ID,
 ) -> str:
     now = int(time.time())
     claims: dict[str, Any] = {
@@ -71,7 +80,7 @@ def issue_token(
         claims,
         private_key,
         algorithm="RS256",
-        headers={"kid": KEY_ID, "typ": "JWT"},
+        headers={"kid": key_id, "typ": "JWT"},
     )
 
 
@@ -119,3 +128,31 @@ async def test_invalid_token_boundaries_are_rejected(
         validator = EntraTokenValidator(settings, http_client)
         with pytest.raises(TokenValidationError, match=expected_message):
             await validator.validate(issue_token(private_key, **token_overrides))
+
+
+async def test_unknown_key_id_refreshes_current_cache_for_key_rotation() -> None:
+    settings = make_settings().model_copy(update={"unknown_kid_refresh_seconds": 0})
+    first_private_key, first_jwk = make_signing_material("first-key")
+    second_private_key, second_jwk = make_signing_material("rotated-key")
+    published_keys = [first_jwk]
+    jwks_requests = 0
+    jwks_uri = "https://login.microsoftonline.com/test/discovery/v2.0/keys"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal jwks_requests
+        if str(request.url) == settings.openid_configuration_url:
+            return httpx.Response(200, json={"jwks_uri": jwks_uri})
+        if str(request.url) == jwks_uri:
+            jwks_requests += 1
+            return httpx.Response(200, json={"keys": published_keys})
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        validator = EntraTokenValidator(settings, http_client)
+        await validator.validate(issue_token(first_private_key, key_id="first-key"))
+
+        published_keys[:] = [first_jwk, second_jwk]
+        identity = await validator.validate(issue_token(second_private_key, key_id="rotated-key"))
+
+    assert identity.object_id == USER_ID
+    assert jwks_requests == 2

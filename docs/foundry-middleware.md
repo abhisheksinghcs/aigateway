@@ -82,6 +82,89 @@ The middleware uses two identity mechanisms:
 Keeping these identities separate prevents the OBO credential from also being
 the Azure workload identity used to invoke Foundry.
 
+## Customer Deployment Model
+
+Customers do not recreate the middleware Python files for each hosted-agent
+deployment. The files under `middleware/src/foundry_middleware/` are the
+reusable trusted-service implementation:
+
+| File | Reusable responsibility |
+| --- | --- |
+| `app.py` | Builds the FastAPI application and orchestrates validation, OBO, and Foundry invocation. |
+| `auth.py` | Validates the incoming middleware-audience Entra access token. |
+| `obo.py` | Exchanges the validated assertion for a LiteLLM-audience delegated token. |
+| `foundry.py` | Acquires the separate Foundry workload token and invokes the fixed hosted-agent endpoint. |
+| `config.py` | Loads and validates customer-specific runtime configuration. |
+| `models.py` | Defines the intentionally narrow public request contract. |
+
+These files are built once into the middleware container image using
+`middleware/Dockerfile`. Customers deploy that image with the resources under
+`middleware/k8s/`; they should modify the Python source only if their API or
+identity requirements differ from the supported flow.
+
+### Separate Deployable Components
+
+The solution has three related but independently deployed components:
+
+1. The client obtains a middleware-audience user token and calls the AKS
+   middleware.
+2. The reusable middleware container validates the user, performs OBO, and
+   invokes Foundry.
+3. The Foundry hosted agent receives the forwarded delegated token and calls
+   LiteLLM.
+
+The middleware source is not copied into the hosted-agent project. The
+hosted-agent code has a smaller responsibility: read
+`x-client-litellm-user-token`, obtain its internal DeepWiki-only LiteLLM
+virtual key from a secret store, and call the fixed LiteLLM endpoint with both
+values. It must never accept the virtual key from the caller or log either
+credential.
+
+### Per-Customer Configuration
+
+Each customer supplies environment-specific resources and values rather than
+rewriting the middleware:
+
+1. Create the confidential middleware API registration, expose its delegated
+   scope, and grant it the LiteLLM `access_as_user` delegated permission.
+2. Create or configure the user-facing client registration and grant it the
+   middleware's delegated scope. A CLI, web application, native application,
+   and Copilot surface can require different client registration settings.
+3. Create the AKS workload identity, Kubernetes service account, and federated
+   credential used to invoke Foundry.
+4. Grant that workload identity **Foundry Agent Consumer** and
+   `Microsoft.CognitiveServices/accounts/AIServices/agents/endpoints/UserIdentityImpersonation/action`
+   at the appropriate Foundry scope.
+5. Deploy the hosted agent and provide its fixed Responses endpoint to the
+   middleware.
+6. Configure the tenant ID, middleware client ID, expected audience, delegated
+   LiteLLM scope, Foundry endpoint, workload identity client ID, and deployable
+   container image through the Kubernetes ConfigMap and Deployment.
+7. Inject the OBO credential through a Kubernetes Secret. The current POC uses
+   a client secret; production should evaluate a certificate or stronger
+   credential strategy.
+8. Store the hosted agent's restricted LiteLLM virtual key in its secret store,
+   never in source, configuration committed to Git, prompts, or caller input.
+9. Run end-to-end tests proving valid user admission, invalid issuer/audience
+   rejection, OBO failure handling, Foundry invocation, and the guarded
+   LiteLLM call.
+
+The expected customer experience is therefore:
+
+```text
+Consume the deployment package
+  -> create tenant-specific identities and permissions
+  -> deploy/configure the Foundry hosted agent
+  -> supply runtime configuration and secrets
+  -> deploy the middleware image and Kubernetes manifests
+  -> run end-to-end validation
+```
+
+Customers should not independently reimplement `auth.py` or `obo.py`. Keeping
+the security-sensitive validation and exchange logic in the versioned
+middleware package makes fixes, testing, and upgrades consistent across
+deployments.
+
 ## App Registration 1: Middleware API
 
 Create this registration first.

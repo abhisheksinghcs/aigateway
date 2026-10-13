@@ -1,3 +1,9 @@
+"""Verify FastAPI orchestration, security ordering, and public error handling.
+
+The tests use fakes to prove validation happens before OBO and Foundry calls,
+trusted identity values are forwarded, and internal failures stay sanitized.
+"""
+
 from dataclasses import dataclass, field
 
 import httpx

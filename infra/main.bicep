@@ -21,6 +21,12 @@ param aksAdminPrincipalId string = ''
 @description('Email receiver for AKS operational alerts. Leave empty to deploy alerts without email notification.')
 param alertEmail string = ''
 
+@description('Enable one guarded Logic App recovery attempt when the AKS node-not-ready alert fires.')
+param enableNodeAutoRecovery bool = false
+
+@description('AKS node VMSS name. Required only when guarded node auto-recovery is enabled.')
+param nodeVmssName string = ''
+
 @description('Tags applied to resources created by this deployment.')
 param tags object = {
   environment: 'demo'
@@ -34,6 +40,12 @@ var workspaceName = '${resourcePrefix}-law-${suffix}'
 var workloadIdentityName = '${resourcePrefix}-workload-id'
 var aksName = '${resourcePrefix}-aks'
 var nodeResourceGroupName = 'MC_${resourceGroupName}_${aksName}_${location}'
+var nodeVmssResourceId = resourceId(
+  subscription().subscriptionId,
+  nodeResourceGroupName,
+  'Microsoft.Compute/virtualMachineScaleSets',
+  nodeVmssName
+)
 
 resource labResourceGroup 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: resourceGroupName
@@ -84,6 +96,17 @@ module aks 'modules/aks.bicep' = {
   }
 }
 
+module nodeAutoRecovery 'modules/node-auto-recovery.bicep' = {
+  name: 'aks-node-auto-recovery'
+  scope: labResourceGroup
+  params: {
+    location: location
+    enableNodeAutoRecovery: enableNodeAutoRecovery
+    nodeVmssResourceId: nodeVmssResourceId
+    tags: tags
+  }
+}
+
 module alerts 'modules/alerts.bicep' = {
   name: 'aks-operational-alerts'
   scope: labResourceGroup
@@ -92,7 +115,30 @@ module alerts 'modules/alerts.bicep' = {
     workspaceId: monitoring.outputs.workspaceId
     nodeResourceGroupId: subscriptionResourceId('Microsoft.Resources/resourceGroups', nodeResourceGroupName)
     alertEmail: alertEmail
+    enableNodeAutoRecovery: enableNodeAutoRecovery
+    autoRecoveryLogicAppId: nodeAutoRecovery.outputs.logicAppId
+    autoRecoveryCallbackUrl: nodeAutoRecovery.outputs.triggerCallbackUrl
     tags: tags
+  }
+}
+
+module vmssRecoveryRole 'modules/vmss-recovery-role.bicep' = {
+  name: 'aks-vmss-recovery-role'
+  params: {
+    enableNodeAutoRecovery: enableNodeAutoRecovery
+    nodeResourceGroupName: nodeResourceGroupName
+    nodeVmssName: nodeVmssName
+  }
+}
+
+module vmssRecoveryRoleAssignment 'modules/vmss-recovery-role-assignment.bicep' = {
+  name: 'aks-vmss-recovery-role-assignment'
+  scope: resourceGroup(nodeResourceGroupName)
+  params: {
+    enableNodeAutoRecovery: enableNodeAutoRecovery
+    nodeVmssName: nodeVmssName
+    logicAppPrincipalId: nodeAutoRecovery.outputs.logicAppPrincipalId
+    roleDefinitionId: vmssRecoveryRole.outputs.roleDefinitionId
   }
 }
 
@@ -163,4 +209,5 @@ output workloadIdentityClientId string = identity.outputs.clientId
 output workloadIdentityPrincipalId string = identity.outputs.principalId
 output logAnalyticsWorkspaceId string = monitoring.outputs.workspaceId
 output actionGroupId string = alerts.outputs.actionGroupId
+output nodeAutoRecoveryLogicAppId string = nodeAutoRecovery.outputs.logicAppId
 output modelAccountResourceId string = modelRole.outputs.modelAccountResourceId

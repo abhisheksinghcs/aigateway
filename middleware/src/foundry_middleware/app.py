@@ -1,3 +1,10 @@
+"""Assemble the FastAPI application and orchestrate the complete request flow.
+
+This is the middleware entry point: it validates the caller, performs OBO,
+invokes Foundry with trusted identity headers, and translates expected failures
+into sanitized HTTP responses.
+"""
+
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -59,6 +66,10 @@ bearer_scheme = HTTPBearer(auto_error=False)
 def build_services(settings: Settings) -> Services:
     """Create production dependencies that share one bounded HTTP client."""
 
+    # Stage 1: compose one process-wide graph of production dependencies.
+    #
+    # Reusing the HTTP client preserves connection pooling and applies one timeout to
+    # OpenID discovery, JWKS retrieval, and Foundry calls.
     http_client = httpx.AsyncClient(timeout=settings.request_timeout_seconds)
     token_provider = WorkloadIdentityTokenProvider(settings)
     return Services(
@@ -75,6 +86,8 @@ def create_app(services: Services | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+        # Stage 2: initialize fail-closed runtime services before accepting traffic.
+        #
         # Tests inject fakes. Production loads fail-closed environment settings and
         # creates network clients only once for the process lifetime.
         runtime_services = services or build_services(Settings())
@@ -82,6 +95,7 @@ def create_app(services: Services | None = None) -> FastAPI:
         try:
             yield
         finally:
+            # Close shared network transports during graceful pod termination.
             if runtime_services.http_client is not None:
                 await runtime_services.http_client.aclose()
             if runtime_services.token_provider is not None:
@@ -95,10 +109,12 @@ def create_app(services: Services | None = None) -> FastAPI:
 
     @application.get("/healthz")
     async def health() -> dict[str, str]:
+        # Liveness proves that the web process can answer; it does not call Entra.
         return {"status": "healthy"}
 
     @application.get("/readyz")
     async def ready(request: Request) -> dict[str, str]:
+        # Readiness requires successful lifespan initialization and configuration.
         if not hasattr(request.app.state, "services"):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -113,6 +129,8 @@ def create_app(services: Services | None = None) -> FastAPI:
             Depends(bearer_scheme),
         ],
     ) -> tuple[str, UserIdentity]:
+        # Stage 3: authenticate the user-facing request.
+        #
         # Authentication always happens before OBO. An unvalidated assertion must
         # never reach MSAL or be forwarded to another service.
         if credentials is None or credentials.scheme.lower() != "bearer":
@@ -123,6 +141,8 @@ def create_app(services: Services | None = None) -> FastAPI:
             )
 
         try:
+            # This call completes all three validation stages in auth.py before the
+            # original token can be used as an OBO assertion.
             identity = await request.app.state.services.validator.validate(credentials.credentials)
         except TokenValidationError as exc:
             raise HTTPException(
@@ -141,6 +161,7 @@ def create_app(services: Services | None = None) -> FastAPI:
             Depends(authenticated_request),
         ],
     ) -> dict[str, object]:
+        # Stage 4: perform OBO and invoke Foundry only for an authenticated request.
         user_assertion, identity = authentication
         try:
             # Change the token audience through OBO, then bind the invocation to the
@@ -152,6 +173,8 @@ def create_app(services: Services | None = None) -> FastAPI:
                 user_object_id=identity.object_id,
             )
         except OboExchangeError as exc:
+            # Preserve a Conditional Access challenge so the interactive client can
+            # satisfy policy and retry; never substitute app-only access.
             headers = {"WWW-Authenticate": f'Bearer error="{exc.error_code}"'}
             if exc.claims:
                 headers["WWW-Authenticate"] += f', claims="{exc.claims}"'
@@ -161,6 +184,8 @@ def create_app(services: Services | None = None) -> FastAPI:
                 headers=headers,
             ) from exc
         except FoundryInvocationError as exc:
+            # Convert all Foundry failures into a stable gateway error and include only
+            # a safe correlation ID for troubleshooting.
             detail: dict[str, str] = {"error": "foundry_invocation_failed"}
             if exc.request_id:
                 detail["request_id"] = exc.request_id

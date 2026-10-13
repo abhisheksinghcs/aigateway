@@ -1,10 +1,10 @@
 # AI Gateway Lab Status
 
-Last updated: 2026-10-12 16:06 EDT
+Last updated: 2026-10-13 16:20 EDT
 
 ## Current State
 
-The approved POC is deployed and functionally verified. Azure infrastructure and LiteLLM are running in `eastus2`. PostgreSQL-backed administration and the Microsoft Agent 365 guardrail MVP are operational. Public, trusted HTTPS now exposes only LiteLLM's authenticated `/mcp` route; the Copilot Studio connector and final authentication pattern remain to be built.
+The approved POC is deployed and healthy in `eastus2`. Both AKS workers are Ready, PostgreSQL and LiteLLM are Ready, and public route validation passes. Azure Resource Health classified the latest unexplained stops as `UserInitiated` by an authorized user or process, but the initiating actor remains unknown. A guarded Azure Monitor and Logic App workflow is now enabled to make one delayed recovery attempt when nodes stop reporting or become NotReady.
 
 ## Azure Context
 
@@ -138,6 +138,29 @@ The approved POC is deployed and functionally verified. Azure infrastructure and
 - The script writes only non-secret generated IDs and scopes to the ignored `.azure/foundry-middleware-apps.env` file. App registrations are never created automatically during clone or prerequisite checks.
 - The app-registration script passed Bash syntax validation, its no-approval execution stopped at the required approval gate, and the repository passed `git diff --check`. No Entra object was created or changed during validation.
 
+## Recovered AKS Incident: 2026-10-13
+
+- Incident impact before recovery: VMSS instances `0` and `1` were `PowerState/deallocated`; both Kubernetes nodes were `NotReady` with `NodeStatusUnknown`, shutdown, and out-of-service taints. LiteLLM had no healthy pod, PostgreSQL and replacement system workloads were Pending, and the Workload Identity webhook had no available endpoints.
+- Azure's high-level AKS and node-pool surfaces misleadingly remain `Succeeded` / `Running`, and AKS Resource Health remains `Available`.
+- Node 0's final kubelet heartbeat was `2026-10-13T17:07:21Z` (1:07:21 PM EDT). Resource Health recorded `Stopping and deallocating` at `17:08:25Z`, classified it as `UserInitiated`, and stated that an authorized user or process requested it. Kubernetes marked the node NotReady at `17:09:20Z`; the cloud controller first observed `powerStatus="deallocating"` at `17:09:21Z`.
+- Node 1's final kubelet heartbeat was `2026-10-13T17:08:43Z` (1:08:43 PM EDT). Resource Health recorded the same `UserInitiated` `Stopping and deallocating` event at `17:12:15Z`; Kubernetes marked the node NotReady at `17:13:22Z`.
+- Resource Health correlation IDs are `846cacb9-9ced-4fb1-ad45-864c331f65bd` for VM 0, `e8c66761-570b-47f9-903b-a8bc25ff5184` for VM 1, and `2fc2db1c-6c0b-4ed8-8207-088ce8b02531` for the degraded VMSS.
+- The subscription Activity Log contains no VMSS `deallocate/action`, `powerOff/action`, or other ordinary compute operation before either stop. A focused query from `16:45Z` through `17:18:30Z` returned no initiating VMSS control-plane operation.
+- The AKS managed identity performed `virtualMachineScaleSets/manualUpgrade/action` at `17:18:40Z` and wrote VM instance 0 at `17:19:41Z`. These operations occurred after both stops and are repair/reconciliation evidence, not the initiating action.
+- `kube-audit-admin` shows normal kubelet lease updates before heartbeat loss; it does not identify an actor that initiated the VM deallocation. Control-plane logs show Kubernetes reacting to the Azure VM power state rather than requesting the stop.
+- A real Activity Log alert activated at approximately `17:21:39Z`, proving that exported Alert records and the deployed rules are firing. Email delivery still needs confirmation from the recipient.
+- A fresh subscription Resource Graph inventory found no DevTest shutdown schedule targeting this AKS VMSS. Existing DevTest schedules and Logic Apps target unrelated resources. VMSS automatic repairs are unset, upgrade mode is `Manual`, Spot priority is not configured, and scheduled-events configuration is absent.
+- AppLens again failed to create an AKS diagnostic session with Azure `BadRequest`, so it supplied no additional attribution.
+- Revised conclusion: the current strongest evidence is an authorized user-or-process deallocation, but Azure's available logs do not expose that actor. The recurrence on the current node image materially weakens the previous NodeImage hypothesis. Do not attribute the stop to AKS maintenance without additional Azure-internal evidence.
+- The user initially chose to preserve the deallocated failure state, then explicitly ended preservation at 2026-10-13 15:31 EDT and approved enabling guarded auto-recovery. Starting the currently deallocated instances through the guarded workflow is now authorized; reimage, upgrade, delete, and unrelated mutations remain unapproved.
+- A support-ready case draft is stored in the persistent session artifact `files/aks-support-case-2026-10-13.md`. It contains the incident timeline, resource identifiers, correlation IDs, negative evidence, prior recurrence, and specific attribution questions for Microsoft.
+- Guarded node auto-recovery is deployed and enabled. The design uses a dedicated stateful node-not-ready action group, a five-minute safety delay, an exact-VMSS query, one start attempt for only deallocated instances, a three-minute verification, and a custom managed-identity role scoped to VMSS read/start operations.
+- Targeted subscription deployment `litellm-aks-node-auto-recovery` succeeded at `2026-10-13T19:33:03Z`. It created Logic App `litellm-aks-node-auto-recovery`, dedicated action group `litellm-aks-auto-recovery`, custom role `LiteLLM AKS VMSS Start Operator`, and a role assignment scoped to `aks-system-18292702-vmss`. The dedicated action group is attached only to the stateful node-not-ready alert, preventing compute-lifecycle alert loops.
+- The first manually triggered guarded run started at `19:33:38Z`, waited five minutes, found both instances deallocated, invoked the VMSS start action once, waited three minutes, verified no instance remained deallocated, and completed `Succeeded` at `19:42:53Z`.
+- Both VMSS instances now report Running/Succeeded and both Kubernetes nodes are Ready. Workload Identity recovered with two webhook endpoints, PostgreSQL is Ready, and no pod or Deployment remains unhealthy.
+- LiteLLM's ReplicaSet remained in the prior webhook `FailedCreate` backoff after node recovery. A normal Deployment rollout restart cleared the stale controller state; LiteLLM and PostgreSQL are both Ready with zero current pod restarts.
+- Post-recovery public validation passed: `/mcp` returns the expected unauthenticated HTTP 401, while `/ui` and `/v1` remain blocked by ingress with HTTP 404.
+
 ## Operational Notes
 
 - The two AKS VMSS instances have been externally deallocated more than once while the AKS control plane and node pool report Running. They were started as a prerequisite to the approved `1.105.0` upgrade and recovered to Ready. Subscription-level shutdown automation may deallocate them again.
@@ -170,12 +193,17 @@ The approved POC is deployed and functionally verified. Azure infrastructure and
 - The user requested a collaborative middleware build and explicitly prohibited automatic Entra registration creation. `scripts/configure-foundry-middleware-apps.sh` remains reference automation only and must not be run for this POC. App registrations, permissions, credentials, consent, and Foundry identity delegation will be completed manually with the user, one reviewed portal step at a time.
 - Middleware implementation stack selected collaboratively: Python 3.12+, FastAPI, MSAL, PyJWT, HTTPX, and `azure-identity`. The first API is a constrained `POST /v1/responses`; streaming, background execution, stored responses, unknown fields, and caller-selected destinations are rejected. The POC confidential credential will be a client secret injected later through a Kubernetes Secret and never stored in Git.
 - The initial middleware implementation now includes fail-closed configuration, tenant-specific Entra JWT validation, delegated-scope enforcement, MSAL OBO exchange, AKS Workload Identity authentication to Foundry, trusted `x-client-litellm-user-token` and `x-ms-user-identity` forwarding, health endpoints, and sanitized upstream errors.
-- Ten focused tests pass, including real RSA-signed token validation for issuer, audience, tenant, object ID, and delegated scope. Ruff lint/format, Python compilation, and strict Pylance diagnostics pass. No Entra or Azure resource was created or modified.
+- Eleven focused tests pass, including real RSA-signed token validation for issuer, audience, tenant, object ID, delegated scope, and JWKS rotation. Ruff lint/format, Python compilation, and strict Pylance diagnostics pass. No Entra or Azure resource was created or modified.
 - A secure non-root Python 3.12 container definition and placeholder Kubernetes Deployment, ClusterIP Service, ConfigMap, Secret, and workload-identity ServiceAccount are present under `middleware/`. They have not been built, pushed, or applied. Tenant IDs, middleware client ID, client secret, Foundry endpoint, workload identity client ID, and deployable image remain intentionally unset for the manual collaborative steps.
-- Final local validation for this middleware phase passed: 10 pytest tests, Ruff lint and format, Python compilation, strict Pylance diagnostics, `git diff --check`, and Kubernetes client-side dry-run for all five manifests. The local Python interpreter is 3.14, so pytest-asyncio emits upstream Python 3.16 deprecation warnings; the runtime target remains Python 3.12.
+- Final local validation for this middleware phase passed: 11 pytest tests, Ruff lint and format, Python compilation, strict Pylance diagnostics, `git diff --check`, and Kubernetes client-side dry-run for all five manifests. The local Python interpreter is 3.14, so pytest-asyncio emits upstream Python 3.16 deprecation warnings; the runtime target remains Python 3.12.
 - Docker CLI 28.3.3 is installed, but the local Docker daemon is not running. No image was built or pushed, and no Azure build service was used. Deployment remains blocked on the manual Entra registrations, confidential credential, AKS workload identity/federation, Foundry permissions and hosted-agent endpoint, container registry/image, and explicit deployment approval.
 - The middleware walkthrough now documents Pydantic field validators, cached derived settings, the OAuth versus OpenID discovery distinction, JWKS key rotation, and why the untrusted JWT `kid` header must exist as a string before key lookup. It also clarifies that the header shape check is not authentication; signature verification against the selected Entra public key establishes authenticity.
 - Core middleware modules now include concise docstrings and security-boundary comments for readers unfamiliar with the implementation. The annotations distinguish untrusted JWT parsing from cryptographic validation, explain algorithm pinning and `kid` lookup, JWKS rotation, OBO token-audience exchange, AKS Workload Identity, Foundry header roles, sanitized errors, and dependency injection without commenting routine syntax.
+- Every middleware Python file now starts with a module-level purpose docstring. Production files explain their role in the validate -> OBO -> Foundry path, and test files identify the security boundary and behavior they prove.
+- Customer deployment ownership is now documented explicitly. Customers consume the versioned middleware image and Kubernetes package rather than recreating the Python files; they provide tenant-specific Entra registrations, scopes, credentials, workload identity, Foundry endpoint and permissions, image, and secrets. The hosted-agent code remains a separate component that forwards the delegated token to LiteLLM with an internally stored restricted virtual key.
+- `auth.py` now labels the three validation stages inline and explains each `jwt.decode` control: signing key, pinned algorithm, middleware audience, tenant issuer, clock skew, and required claims. It also annotates tenant, `oid`, subject, and delegated-scope enforcement, while `app.py` identifies the validation call that must succeed before OBO.
+- The same staged annotation theme now covers the remaining production modules: configuration sources and normalization in `config.py`; confidential-client binding, audience exchange, success/failure handling, and Conditional Access in `obo.py`; workload identity, fixed destinations, distinct header roles, and response sanitization in `foundry.py`; request restrictions in `models.py`; and startup, health, authentication, orchestration, and error translation in `app.py`.
+- JWKS refresh behavior was reviewed while explaining `time.monotonic()`. A cache-guard bug was found where an unfamiliar `kid` could request refresh but the still-current cache caused `_refresh_keys` to return without fetching the rotated key. The implementation now distinguishes ordinary expiry from required-key refresh, rechecks after acquiring the lock, and rate-limits unknown-key refreshes with a configurable 60-second cooldown. A synthetic RSA key-rotation test covers this path.
 - `kubelogin` was installed with `az aks install-cli` because Homebrew was blocked by the machine's Xcode version.
 - The generated LiteLLM master key exists only in the Kubernetes Secret `litellm-master-key`; it is not stored in Git.
 - Access requires a local port-forward:
@@ -208,18 +236,10 @@ The approved POC is deployed and functionally verified. Azure infrastructure and
 
 ## Next Step
 
-The next build item is the Copilot Studio authentication connection:
-
-1. [x] Add an infrastructure-managed subnet NSG allow rule for public HTTP/HTTPS traffic to the AKS ingress load balancer.
-2. [x] Replace the incomplete public `/v1` ingress path with LiteLLM's streamable HTTP `/mcp` route while keeping `/ui` private.
-3. [x] Deploy the Kubernetes ingress change, recreate the failed ACME issuance attempt, and verify publicly trusted HTTPS.
-4. [x] Update the Copilot Studio MCP server to use the Azure-managed hostname and confirm the delegated OAuth bearer JWT reaches LiteLLM.
-5. [x] Validate the issuer-bound JWT configuration and create a deterministic LiteLLM team whose ID matches the Copilot token's `appid` claim and whose only MCP permission is `deepwiki`.
-6. [x] Deploy the JWT configuration and verify continued virtual-key MCP access and `customer-chat` inference.
-7. Resolve the LiteLLM Enterprise JWT-authentication license gate by supplying a license, building a server-side authentication adapter, or explicitly changing the POC to a Foundry-native Agent 365 architecture.
-8. After resolving licensing, prove valid JWT admission plus invalid-audience and invalid-issuer rejection.
-9. Retry Copilot Studio tool discovery and validate the hosted Copilot Studio -> HTTPS `/mcp` -> LiteLLM -> Agent 365 -> DeepWiki flow.
-10. Validate an administrator-configured Defender policy block separately; the MVP currently proves the allow path and mandatory-user-token refusal.
+1. [x] Deploy and validate guarded node auto-recovery.
+2. Monitor the next alert-driven run and confirm the action-group email plus automatic trigger arrive without manual invocation.
+3. Open an Azure support case using the exact heartbeat, Resource Health, and correlation-ID evidence above; request authenticated-actor attribution.
+4. Resume the manual Entra registration walkthrough for the Foundry OBO middleware. Do not run the Entra automation script.
 
 ## Handoff Rules
 

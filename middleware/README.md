@@ -4,6 +4,21 @@ This FastAPI service is the trusted application backend in Microsoft's
 [application-managed OBO flow](https://learn.microsoft.com/azure/foundry/agents/how-to/use-on-behalf-of-flow#understand-the-delegated-access-flow).
 It does not create or configure Microsoft Entra applications.
 
+## What Customers Deploy
+
+This directory is a reusable middleware package, not a set of Python files that
+each customer recreates for every hosted agent. We build the production modules
+into one container image and deploy it with the manifests under `k8s/`.
+
+Customers supply their tenant-specific Entra registrations, delegated scopes,
+confidential OBO credential, AKS workload identity, Foundry endpoint and
+permissions, container image, and secret values. The separate hosted-agent code
+reads the forwarded delegated token and calls LiteLLM with an internally stored
+restricted virtual key; it does not contain or duplicate this FastAPI service.
+
+See `../docs/foundry-middleware.md` for the complete component ownership model,
+per-customer configuration checklist, and deployment sequence.
+
 ## Request Flow
 
 ```text
@@ -111,6 +126,17 @@ token.
 
 Signing keys are cached and refreshed when they expire or an unknown key ID is
 encountered.
+
+The cache uses `time.monotonic()`, an elapsed-time clock that only moves
+forward and is unaffected by time-zone changes or operating-system clock
+corrections. The code stores an expiration point as the current monotonic value
+plus the configured cache duration, then compares future monotonic values
+against it.
+
+An unfamiliar `kid` can indicate legitimate Entra key rotation, so it can
+trigger an early refresh before normal cache expiration. Because `kid` comes
+from an untrusted header, those early refreshes have a short cooldown to prevent
+arbitrary key IDs from causing one Entra metadata request per caller request.
 
 The JWT header check requires both an approved signing algorithm and a
 string-valued key ID:
