@@ -17,6 +17,12 @@ future private-network design is added.
 
 ## Authentication Flow
 
+This follows Microsoft's
+[application-managed OBO and token-forwarding flow](https://learn.microsoft.com/azure/foundry/agents/how-to/use-on-behalf-of-flow#understand-the-delegated-access-flow).
+Foundry does not perform the OBO exchange. The AKS middleware is the trusted
+application backend that authenticates the user, performs OBO, authenticates
+separately to Foundry, and invokes the hosted agent.
+
 1. A public CLI client signs in a user and obtains a token for the middleware
    API's `access_as_user` scope.
 2. The middleware validates the token's signature, issuer, audience, lifetime,
@@ -38,6 +44,43 @@ future private-network design is added.
 
 The virtual key authenticates and authorizes the LiteLLM request. The delegated
 token supplies the user context required by the Agent 365 guardrail.
+
+### Component Responsibilities
+
+| Component | Responsibility |
+| --- | --- |
+| CLI or future UI | Interactively signs in the user and sends a middleware-audience access token. It never receives the LiteLLM virtual key. |
+| AKS middleware | Validates the incoming token, performs OBO for the LiteLLM delegated scope, derives the user object ID from validated claims, acquires a separate Foundry workload token, and invokes Foundry. |
+| Foundry | Authenticates the middleware workload identity, checks that it can represent the user, establishes per-user context, and forwards `x-client-*` headers to the hosted-agent container. |
+| Foundry hosted agent | Reads the forwarded delegated token and calls only the configured LiteLLM endpoint with both the delegated token and an internally supplied LiteLLM key. |
+| LiteLLM | Uses the virtual key for gateway authentication and authorization while making the delegated token available to the Agent 365 guardrail. |
+
+The three values sent to Foundry are not interchangeable:
+
+| Foundry request header | Value | Purpose |
+| --- | --- | --- |
+| `Authorization` | Foundry workload access token | Authenticates the middleware to Foundry. Foundry does not forward it to the hosted-agent container. |
+| `x-client-litellm-user-token` | Delegated LiteLLM access token without a `Bearer` prefix | Carries the request-scoped downstream token to hosted-agent code. The `x-client-` prefix enables forwarding. |
+| `x-ms-user-identity` | Object ID from the validated user context | Associates the Foundry request and conversation with the represented user. It is not a token and grants no downstream permission by itself. |
+
+The middleware must never trust `x-ms-user-identity` or a downstream token
+supplied directly by the client. It derives both from the validated incoming
+identity and OBO result. Tokens remain request-scoped and must not be written to
+prompts, model inputs, logs, exceptions, conversation history, or responses.
+
+### Identity Separation
+
+The middleware uses two identity mechanisms:
+
+1. The `litellm-foundry-middleware-api` confidential application validates
+   user-audience tokens and performs the delegated OBO exchange.
+2. The AKS workload identity acquires the Foundry workload token. It requires
+   **Foundry Agent Consumer** and the
+   `Microsoft.CognitiveServices/accounts/AIServices/agents/endpoints/UserIdentityImpersonation/action`
+   data action at the appropriate Foundry scope.
+
+Keeping these identities separate prevents the OBO credential from also being
+the Azure workload identity used to invoke Foundry.
 
 ## App Registration 1: Middleware API
 
@@ -136,3 +179,9 @@ users without the required directory permissions.
 
 The script does not create a secret, certificate, federated credential, Azure
 role assignment, Kubernetes resource, or consent grant.
+
+For this POC, the script is retained only as reproducible customer reference
+material and must not be run. We will create and configure each Entra
+registration together in the portal, record only non-secret identifiers, and
+verify each setting before continuing. Middleware code and local tests will use
+configuration placeholders until those manual steps are complete.

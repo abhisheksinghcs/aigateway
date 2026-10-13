@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-foundry-middleware-config
+  namespace: litellm
+  labels:
+    app.kubernetes.io/name: litellm-foundry-middleware
+    app.kubernetes.io/managed-by: containerization-assist
+data:
+  MIDDLEWARE_TENANT_ID: ""
+  MIDDLEWARE_CLIENT_ID: ""
+  MIDDLEWARE_REQUIRED_SCOPE: "access_as_user"
+  MIDDLEWARE_DOWNSTREAM_SCOPE: "api://18f77e7f-8bf9-4f43-b014-e2168b6c5574/access_as_user"
+  MIDDLEWARE_FOUNDRY_RESPONSES_ENDPOINT: ""
+  MIDDLEWARE_FOUNDRY_SCOPE: "https://ai.azure.com/.default"

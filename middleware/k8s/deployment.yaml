@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm-foundry-middleware
+  namespace: litellm
+  labels:
+    app.kubernetes.io/name: litellm-foundry-middleware
+    app.kubernetes.io/managed-by: containerization-assist
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm-foundry-middleware
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: litellm-foundry-middleware
+        app.kubernetes.io/managed-by: containerization-assist
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: litellm-foundry-middleware
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: middleware
+          image: litellm-foundry-middleware:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: litellm-foundry-middleware-config
+            - secretRef:
+                name: litellm-foundry-middleware-secret
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5

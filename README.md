@@ -28,6 +28,7 @@ The source-of-truth plan is [.azure/deployment-plan.md](.azure/deployment-plan.m
 infra/          Bicep infrastructure
 kubernetes/     Namespace and Helm values
 litellm/        LiteLLM gateway configuration
+middleware/     FastAPI OBO middleware, tests, container, and Kubernetes manifests
 scripts/        Prerequisite, deployment, test, and status automation
 docs/           Architecture and security documentation
 ```
