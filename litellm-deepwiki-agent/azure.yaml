@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+requiredVersions:
+    azd: '>=1.27.1'
+    extensions:
+        azure.ai.agents: '>=1.0.0-beta.9'
+name: litellm-deepwiki-agent
+services:
+    ai-project:
+        host: azure.ai.project
+        endpoint: https://agent365-teams-agents.services.ai.azure.com/api/projects/Agent365-Teams-Agents
+    litellm-deepwiki-agent:
+        project: src/litellm-deepwiki-agent
+        host: azure.ai.agent
+        language: python
+        uses:
+            - ai-project
+        env:
+            DEEPWIKI_REPOSITORY: ${DEEPWIKI_REPOSITORY}
+            LITELLM_MCP_URL: ${LITELLM_MCP_URL}
+            LITELLM_VIRTUAL_KEY: ${LITELLM_VIRTUAL_KEY}
+        codeConfiguration:
+            dependencyResolution: remote_build
+            entryPoint: main.py
+            runtime: python_3_13
+        container:
+            resources:
+                cpu: "0.5"
+                memory: 1Gi
+        description: Deterministic Responses agent that calls only DeepWiki through the LiteLLM MCP gateway with delegated Agent 365 user context.
+        displayName: LiteLLM DeepWiki Agent
+        kind: hosted
+        metadata:
+            tags:
+                - AI Agent Hosting
+                - Responses Protocol
+                - Bring Your Own
+                - Python
+                - LiteLLM
+                - DeepWiki
+        name: litellm-deepwiki-agent
+        protocols:
+            - protocol: responses
+              version: 2.0.0
+infra:
+    provider: microsoft.foundry

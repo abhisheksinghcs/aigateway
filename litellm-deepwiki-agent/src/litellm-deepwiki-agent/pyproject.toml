@@ -1,0 +1,19 @@
+[project]
+name = "litellm-deepwiki-agent"
+version = "0.1.0"
+description = "A deterministic Foundry hosted agent for DeepWiki through LiteLLM."
+requires-python = ">=3.12"
+dependencies = [
+    "azure-ai-agentserver-responses==2.1.0",
+    "debugpy",
+    "httpx<1",
+    "httpx2>=2.13.1",
+    "mcp>=2.3.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.10",
+]
