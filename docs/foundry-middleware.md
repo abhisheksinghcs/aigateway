@@ -165,6 +165,28 @@ the security-sensitive validation and exchange logic in the versioned
 middleware package makes fixes, testing, and upgrades consistent across
 deployments.
 
+### Secret and `.env` Handling
+
+No `.env` file is required for AKS. The repository includes
+`middleware/.env.example` only as a local-development template, while
+`middleware/.env` is intentionally absent and ignored by Git. Developers who
+need local execution can copy the template to `.env`, restrict it to mode
+`0600`, and populate it locally.
+
+Do not replace `REPLACE_ME` in `middleware/k8s/secret.yaml`. That file is a
+tracked, non-deployable shape declaration and must never contain a real
+credential. Before deploying the middleware, run:
+
+```bash
+scripts/configure-foundry-middleware-secret.sh
+```
+
+The helper prompts without echoing the value and creates or updates the live
+Kubernetes Secret `litellm/litellm-foundry-middleware-secret` with key
+`MIDDLEWARE_CLIENT_SECRET`. The Deployment imports that key as an environment
+variable through `envFrom`; [config.py](../middleware/src/foundry_middleware/config.py)
+then loads it through the `MIDDLEWARE_` settings prefix.
+
 ## App Registration 1: Middleware API
 
 Create this registration first.
@@ -208,25 +230,53 @@ credential yet; credential design is a separate step.
 
 1. Create another app registration named `litellm-foundry-cli-client`.
 2. Select **Accounts in this organizational directory only**.
-3. For **Redirect URI**, select **Public client/native** and enter:
+3. Leave **Redirect URI** empty during initial registration and select
+   **Register**.
+4. Open **Authentication** > **Add a platform**.
+5. In the current Entra portal, under **Mobile and desktop applications**,
+   select **Mobile and desktop applications**. This is the current portal name
+   for the platform older instructions call **Public client/native**.
+6. Under the custom redirect URI option, enter:
 
    ```text
    http://localhost
    ```
 
-4. Open **Authentication** and confirm **Allow public client flows** is
-   enabled.
-5. Open **API permissions** > **Add a permission** >
+7. Select **Configure**.
+8. On the **Authentication** page, under **Advanced settings**, set
+   **Allow public client flows** to **Yes**, then select **Save**.
+9. Open **API permissions** > **Add a permission** >
    **My APIs**.
-6. Select `litellm-foundry-middleware-api`.
-7. Select **Delegated permissions** > `access_as_user`, then add the
+10. Select `litellm-foundry-middleware-api`.
+11. Select **Delegated permissions** > `access_as_user`, then add the
    permission.
-8. Return to the middleware registration's **Expose an API** page.
-9. Under **Authorized client applications**, add the CLI application's client
-   ID and select the middleware `access_as_user` scope.
+12. Return to **App registrations** > **All applications** and open
+   `litellm-foundry-middleware-api`. Confirm the page heading shows the
+   middleware API, not `litellm-foundry-cli-client`.
+13. In the middleware registration, open **Expose an API** and verify
+   `access_as_user` appears under **Scopes defined by this API**. This scope
+   was created during App Registration 1; do not create a scope on the CLI
+   registration.
+14. Still in the middleware registration, under
+   **Authorized client applications**, select **Add a client application**.
+15. Enter the CLI registration's **Application (client) ID**, select the
+   middleware `access_as_user` scope, and authorize it.
 
 The CLI is a public client and must not have a client secret. It uses device
 code or authorization code with PKCE for interactive sign-in.
+
+Microsoft's current redirect-URI guidance calls this platform
+**Mobile and desktop applications**. Do not select **Web** or
+**Single-page application** for this CLI registration; those represent
+different client types and token-handling assumptions.
+
+The CLI consumes the middleware API; it does not expose an API of its own.
+Therefore, do not set an Application ID URI, add a scope, or add an authorized
+client application on `litellm-foundry-cli-client`. The CLI's **Expose an API**
+page can remain empty. If an Application ID URI was set accidentally, it does
+not grant access or break this flow, but it should be removed from the CLI
+registration's manifest by restoring `identifierUris` to an empty array after
+review.
 
 ## Consent
 

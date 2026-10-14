@@ -219,6 +219,22 @@ python3 -m venv .venv
 The unit tests use synthetic RSA keys and tokens. They do not use tenant
 credentials.
 
+### Optional Local `.env`
+
+The repository intentionally does not contain `middleware/.env`. Pydantic can
+read that file for local development, but AKS does not use it. To run the
+middleware locally, create an ignored, owner-only copy of the template:
+
+```bash
+cd middleware
+cp .env.example .env
+chmod 600 .env
+```
+
+Replace the template values only in that local file. Never commit `.env`, share
+it, or use it as the Kubernetes deployment mechanism. Environment variables
+provided by the runtime take precedence over values in `.env`.
+
 ## Kubernetes Packaging
 
 The `k8s/` directory contains non-deployable placeholders for:
@@ -238,3 +254,17 @@ Do not apply these manifests until we have manually completed and verified:
 5. Foundry Agent Consumer and user-identity impersonation permissions.
 6. The deployed hosted-agent Responses endpoint.
 7. A real container image in an accessible registry.
+
+Keep `k8s/secret.yaml` unchanged with its `REPLACE_ME` placeholder. Never paste
+the real Entra credential into that tracked manifest. Immediately before
+middleware deployment, create or update the live Kubernetes Secret through the
+hidden-prompt helper:
+
+```bash
+scripts/configure-foundry-middleware-secret.sh
+```
+
+The helper reads the value without terminal echo, keeps it out of command-line
+arguments and generated files, creates
+`litellm/litellm-foundry-middleware-secret`, and unsets the shell variable after
+`kubectl` applies the Secret.

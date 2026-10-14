@@ -10,7 +10,7 @@ wheels/
 .venv
 .env
 
-local-file/
+local-files/
 
 # Azure and Kubernetes local state
 .azure/*.env
