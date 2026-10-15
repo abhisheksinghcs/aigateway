@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     downstream_scope: str
     foundry_responses_endpoint: AnyHttpUrl
     foundry_scope: str = "https://ai.azure.com/.default"
-    request_timeout_seconds: float = Field(default=60.0, gt=0, le=300)
+    request_timeout_seconds: float = Field(default=180.0, gt=0, le=300)
     jwks_cache_seconds: int = Field(default=3600, ge=60, le=86400)
     unknown_kid_refresh_seconds: int = Field(default=60, ge=0, le=300)
     clock_skew_seconds: int = Field(default=60, ge=0, le=300)

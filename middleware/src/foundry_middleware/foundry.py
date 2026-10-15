@@ -84,15 +84,24 @@ class FoundryClient:
         # These values serve separate trust purposes: Authorization authenticates the
         # middleware workload, x-client-* transports the OBO token to agent code, and
         # x-ms-user-identity scopes Foundry's per-user context.
-        response = await self._http_client.post(
-            self._endpoint,
-            headers={
-                "Authorization": f"Bearer {workload_token}",
-                "x-client-litellm-user-token": delegated_token,
-                "x-ms-user-identity": user_object_id,
-            },
-            json=payload,
-        )
+        try:
+            response = await self._http_client.post(
+                self._endpoint,
+                headers={
+                    "Authorization": f"Bearer {workload_token}",
+                    "x-client-litellm-user-token": delegated_token,
+                    "x-ms-user-identity": user_object_id,
+                },
+                json=payload,
+            )
+        except httpx.TimeoutException as exc:
+            # Foundry can cold-start hosted compute. Convert an exhausted upstream
+            # wait into a stable gateway timeout instead of an unhandled HTTP 500.
+            raise FoundryInvocationError(status_code=504, request_id=None) from exc
+        except httpx.RequestError as exc:
+            # DNS, TLS, connection, and other transport failures are upstream
+            # gateway errors. Never reflect exception text that could expose URLs.
+            raise FoundryInvocationError(status_code=502, request_id=None) from exc
 
         # Stage 4: accept only a successful JSON object. Preserve a correlation ID
         # for operations without reflecting an arbitrary upstream response body.

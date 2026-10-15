@@ -186,11 +186,16 @@ def create_app(services: Services | None = None) -> FastAPI:
         except FoundryInvocationError as exc:
             # Convert all Foundry failures into a stable gateway error and include only
             # a safe correlation ID for troubleshooting.
-            detail: dict[str, str] = {"error": "foundry_invocation_failed"}
+            is_timeout = exc.status_code == status.HTTP_504_GATEWAY_TIMEOUT
+            detail: dict[str, str] = {
+                "error": "foundry_timeout" if is_timeout else "foundry_invocation_failed"
+            }
             if exc.request_id:
                 detail["request_id"] = exc.request_id
             raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
+                status_code=(
+                    status.HTTP_504_GATEWAY_TIMEOUT if is_timeout else status.HTTP_502_BAD_GATEWAY
+                ),
                 detail=detail,
             ) from exc
 

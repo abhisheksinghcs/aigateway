@@ -11,6 +11,7 @@ import pytest
 
 from foundry_middleware.app import Services, create_app
 from foundry_middleware.auth import TokenValidationError, UserIdentity
+from foundry_middleware.foundry import FoundryInvocationError
 from foundry_middleware.obo import OboExchangeError
 
 
@@ -55,6 +56,18 @@ class FakeFoundryClient:
             }
         )
         return {"id": "response-1", "status": "completed"}
+
+
+class TimeoutFoundryClient:
+    """Simulate Foundry exceeding the configured response-header timeout."""
+
+    async def create_response(
+        self,
+        payload: dict[str, object],
+        delegated_token: str,
+        user_object_id: str,
+    ) -> dict[str, object]:
+        raise FoundryInvocationError(status_code=504, request_id=None)
 
 
 @pytest.fixture
@@ -161,3 +174,27 @@ async def test_claims_challenge_is_returned_to_client() -> None:
     assert response.status_code == 401
     assert "interaction_required" in response.headers["www-authenticate"]
     assert "claims-challenge" in response.headers["www-authenticate"]
+
+
+async def test_foundry_timeout_returns_sanitized_gateway_timeout() -> None:
+    """Prove an upstream timeout is explicit without exposing transport details."""
+
+    services = Services(
+        validator=FakeValidator(),
+        exchanger=FakeExchanger(),
+        foundry_client=TimeoutFoundryClient(),
+    )
+    app = create_app(services)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            response = await client.post(
+                "/v1/responses",
+                headers={"Authorization": "Bearer " + "incoming-user-token"},
+                json={"input": "Explain model fallbacks."},
+            )
+
+    assert response.status_code == 504
+    assert response.json() == {"detail": {"error": "foundry_timeout"}}

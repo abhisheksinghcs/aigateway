@@ -1,6 +1,6 @@
 # Microsoft Agent 365 MCP Guardrail Guide
 
-Last verified: 2026-10-12
+Last verified: 2026-10-15
 
 This guide records the Microsoft Agent 365 guardrail design for the
 LiteLLM gateway. It distinguishes the LiteLLM quick start from the additional
@@ -104,6 +104,62 @@ access_as_user
 
 The Copilot agent does not invent or self-sign this token. The Copilot Studio
 connection and Microsoft Entra ID produce it after the user authenticates.
+
+## Connect LiteLLM to the Agent 365 Tools Gateway
+
+The Microsoft 365 admin center can connect to LiteLLM as a Tools Gateway. This
+is an administrative discovery and governance integration: it inventories MCP
+servers registered in LiteLLM and lets administrators allow or block them. It
+does not replace the runtime request path, the Agent 365 `pre_mcp_call`
+guardrail, or the Foundry OBO middleware.
+
+The feature is currently in preview and requires a Global Administrator to
+grant tenant-wide consent.
+
+![Connect LiteLLM gateway in the Microsoft 365 admin center](diagrams/agent365-connect-litellm-gateway.png)
+
+In the Microsoft 365 admin center:
+
+1. Go to **Agents** > **Settings** > **Gateways**.
+2. Under **LiteLLM gateway**, select **Connect a gateway**.
+3. Enter the following values:
+
+   | Field | POC value |
+   |-------|-----------|
+   | Name | `LiteLLM DeepWiki Gateway` |
+   | Gateway URL | `https://litellm-agent365-mcp-d18f2ff3.eastus2.cloudapp.azure.com` |
+   | Authentication model | **API key** |
+   | API key | A dedicated LiteLLM-issued key scoped to the `deepwiki` MCP server |
+
+4. Review the requested permissions, connect the gateway, and grant consent.
+5. Go to **Agents** > **Tools**, filter the source by **AI gateway**, and wait
+   a few minutes for `deepwiki` to appear.
+6. Review the discovered server and tools, then apply the intended allow or
+   block policy.
+
+The API key is a LiteLLM gateway credential. It is not the middleware OBO
+client secret, an Entra access token, the Foundry workload token, or the
+hosted-agent connection secret. Enter it directly in the admin center; never
+commit it to this repository or copy it into documentation. Prefer a
+purpose-specific key with only the MCP permissions required for discovery and
+governance rather than the unrestricted LiteLLM master key.
+
+The current public ingress intentionally exposes only the runtime `/mcp` path;
+the Admin UI, model APIs, and `/v1` management paths remain private. If the
+preview connector validates the base URL by calling a LiteLLM discovery or
+management path, the connection can receive an ingress-level HTTP 404. In that
+case, identify the exact authenticated endpoint used by the connector and
+publish only that route. Do not expose the complete LiteLLM Admin UI or all
+`/v1` routes as a workaround.
+
+This connection and the runtime integrations have different purposes:
+
+| Integration | Purpose |
+|-------------|---------|
+| Agent 365 Tools Gateway to LiteLLM | Discover and centrally govern registered MCP servers |
+| Client or hosted agent to LiteLLM `/mcp` | Execute an MCP tool with LiteLLM authorization |
+| LiteLLM `agent365-mcp` guardrail | Evaluate each pending MCP call through Agent 365 / Defender |
+| Public OBO middleware to Foundry | Preserve delegated user context for the hosted-agent flow |
 
 ## Copilot Studio Integration Caveat
 
@@ -451,6 +507,7 @@ a hosted Copilot Studio agent can call the gateway.
 
 ## References
 
+- [Manage Tools Gateway in the Microsoft 365 admin center](https://learn.microsoft.com/en-us/microsoft-365/admin/manage/manage-tools-gateway?view=o365-worldwide)
 - [LiteLLM Microsoft Agent 365 guardrail](https://docs.litellm.ai/docs/proxy/guardrails/microsoft_agent_365)
 - [LiteLLM virtual keys](https://docs.litellm.ai/docs/proxy/virtual_keys)
 - [Copilot Studio: connect an existing MCP server](https://learn.microsoft.com/en-us/microsoft-copilot-studio/mcp-add-existing-server-to-agent)

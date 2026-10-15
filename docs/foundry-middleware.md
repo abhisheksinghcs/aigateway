@@ -144,7 +144,10 @@ rewriting the middleware:
    middleware.
 6. Configure the tenant ID, middleware client ID, expected audience, delegated
    LiteLLM scope, Foundry endpoint, workload identity client ID, and deployable
-   container image through the Kubernetes ConfigMap and Deployment.
+   container image through the Kubernetes ConfigMap and Deployment. Keep
+   `MIDDLEWARE_REQUEST_TIMEOUT_SECONDS` aligned with the ingress and calling
+   client; the supplied manifests use 180 seconds to accommodate hosted-agent
+   cold starts.
 7. Inject the OBO credential through a Kubernetes Secret. The current POC uses
    a client secret; production should evaluate a certificate or stronger
    credential strategy.
@@ -169,6 +172,11 @@ Customers should not independently reimplement `auth.py` or `obo.py`. Keeping
 the security-sensitive validation and exchange logic in the versioned
 middleware package makes fixes, testing, and upgrades consistent across
 deployments.
+
+Foundry transport timeouts are returned as sanitized HTTP 504 responses with
+`foundry_timeout`; other Foundry transport or invocation failures are returned
+as sanitized HTTP 502 responses. Neither response reflects endpoint URLs,
+tokens, or raw exception text.
 
 ### Secret and `.env` Handling
 

@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: middleware
-          image: litellmdemokhtkwbank4rg6.azurecr.io/litellm-foundry-middleware@sha256:97384368e3da9c889b7a052f41b6cd684d8e6ebb25cc5e63a72f5fa144fbb91f
+          image: litellmdemokhtkwbank4rg6.azurecr.io/litellm-foundry-middleware@sha256:e4e49b3cca86cadea438ce179a4d5f3f764f83d4a1af605783e95cc2cfdaca7e
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
