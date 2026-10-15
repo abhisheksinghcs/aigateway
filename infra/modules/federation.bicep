@@ -2,6 +2,7 @@ param identityName string
 param oidcIssuerUrl string
 param kubernetesNamespace string
 param serviceAccountName string
+param federatedCredentialName string = 'litellm-service-account'
 
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' existing = {
   name: identityName
@@ -9,7 +10,7 @@ resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' 
 
 resource federatedCredential 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2024-11-30' = {
   parent: identity
-  name: 'litellm-service-account'
+  name: federatedCredentialName
   properties: {
     audiences: [
       'api://AzureADTokenExchange'

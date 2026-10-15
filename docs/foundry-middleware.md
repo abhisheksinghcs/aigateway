@@ -23,6 +23,11 @@ Foundry does not perform the OBO exchange. The AKS middleware is the trusted
 application backend that authenticates the user, performs OBO, authenticates
 separately to Foundry, and invokes the hosted agent.
 
+For a visual introduction, see
+[Foundry delegated access: concept-to-code diagrams](./foundry-obo-flow.md).
+It maps each of Microsoft's six steps to the middleware and hosted-agent files,
+then shows how data moves between the hosted-agent modules.
+
 1. A public CLI client signs in a user and obtains a token for the middleware
    API's `access_as_user` scope.
 2. The middleware validates the token's signature, issuer, audience, lifetime,

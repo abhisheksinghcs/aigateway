@@ -19,18 +19,24 @@ from azure.ai.agentserver.responses import (
     TextResponse,
 )
 
-from agent import answer_question
+from agent import DeepWikiQuestionClient, answer_question
 from config import Settings
 from deepwiki import DeepWikiClient
 
 
-def create_app(settings: Settings | None = None) -> ResponsesAgentServerHost:
+def create_app(
+    settings: Settings | None = None,
+    deepwiki_client: DeepWikiQuestionClient | None = None,
+) -> ResponsesAgentServerHost:
     """Construct the configured AgentServer application.
 
     Args:
         settings: Optional validated settings used by tests. Production callers
             omit this argument so configuration is loaded from environment
             variables and validated before the server starts.
+        deepwiki_client: Optional constrained client used by protocol-level
+            tests. Production callers omit it so the real MCP adapter is
+            created from validated settings.
 
     Returns:
         A host with one Responses handler bound to the deterministic DeepWiki
@@ -45,8 +51,13 @@ def create_app(settings: Settings | None = None) -> ResponsesAgentServerHost:
     resolved_settings = Settings.from_env() if settings is None else settings
 
     # Stage 2: Create one adapter whose URL, repository, tool, and internal key
-    # are fixed for the lifetime of this process.
-    deepwiki_client = DeepWikiClient(resolved_settings)
+    # are fixed for the lifetime of this process. Tests can inject the same
+    # narrow protocol to exercise AgentServer without using real credentials.
+    resolved_client = (
+        DeepWikiClient(resolved_settings)
+        if deepwiki_client is None
+        else deepwiki_client
+    )
 
     # AgentServer owns the HTTP endpoints and Responses event lifecycle. The
     # SDK requires a positive history count; the handler intentionally ignores
@@ -68,7 +79,7 @@ def create_app(settings: Settings | None = None) -> ResponsesAgentServerHost:
         Exceptions remain explicit so AgentServer records a failed response
         rather than returning a success-shaped fallback.
         """
-        answer = await answer_question(context, deepwiki_client)
+        answer = await answer_question(context, resolved_client)
         return TextResponse(context, request, text=answer)
 
     return app

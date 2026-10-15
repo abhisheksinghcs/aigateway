@@ -12,7 +12,11 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY src ./src
 
-RUN python -m pip install --no-cache-dir .
+RUN python -m pip install \
+    --isolated \
+    --no-cache-dir \
+    --index-url https://packagefeedproxy.microsoft.io/pypi/simple \
+    .
 
 USER appuser
 

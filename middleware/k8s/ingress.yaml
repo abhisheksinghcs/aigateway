@@ -1,0 +1,34 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: litellm-foundry-middleware-public
+  namespace: litellm
+  labels:
+    app.kubernetes.io/name: litellm-foundry-middleware
+    app.kubernetes.io/managed-by: containerization-assist
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-connections: "10"
+    nginx.ingress.kubernetes.io/limit-rps: "5"
+    nginx.ingress.kubernetes.io/proxy-body-size: 64k
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "180"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "180"
+    nginx.ingress.kubernetes.io/rewrite-target: /v1/responses
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - litellm-agent365-mcp-d18f2ff3.eastus2.cloudapp.azure.com
+      secretName: litellm-public-tls
+  rules:
+    - host: litellm-agent365-mcp-d18f2ff3.eastus2.cloudapp.azure.com
+      http:
+        paths:
+          - path: /agent/v1/responses$
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: litellm-foundry-middleware
+                port:
+                  number: 80

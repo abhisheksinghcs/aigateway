@@ -8,6 +8,14 @@ gateway.
 The agent does not call a model, choose tools, accept an MCP destination from
 the caller, or accept a repository from the caller.
 
+## Start with the diagrams
+
+Before reading the implementation, use the
+[delegated token and hosted-agent code-flow diagrams](../docs/foundry-obo-flow.md).
+The first maps Microsoft's six-step application-managed OBO flow to this
+repository. The second shows how `main.py`, `config.py`, `agent.py`, `auth.py`,
+and `deepwiki.py` pass configuration, request data, tokens, and results.
+
 ## Request flow
 
 1. A client sends a user token for the middleware API.
@@ -93,6 +101,18 @@ cd src/litellm-deepwiki-agent
 uv sync --frozen --python 3.13
 ```
 
+Foundry deployment uses bundled dependency resolution because the approved
+proxy is intentionally different from the public index used by the remote
+builder. Before `azd deploy`, run:
+
+```bash
+../scripts/build-foundry-agent-bundle.sh
+```
+
+The helper exports production requirements from the lockfile and extracts
+CPython 3.13 `manylinux2014_x86_64` wheels into the ignored `packages/`
+directory. Source builds and fallback indexes are disabled.
+
 Copy [`.env.example`](src/litellm-deepwiki-agent/.env.example) to an ignored
 `.env` only for local development. Never add a real virtual key to
 `.env.example`, `azure.yaml`, source code, or Git.
@@ -126,10 +146,22 @@ the three application settings. It does not declare a model deployment.
 
 Before deployment, set:
 
-- `LITELLM_MCP_URL` to the public LiteLLM `/mcp` URL.
 - `DEEPWIKI_REPOSITORY` to the customer-approved repository.
-- `LITELLM_VIRTUAL_KEY` through the approved deployment secret mechanism,
-  using a key whose LiteLLM object permission contains only `deepwiki`.
+- Create the Foundry project connection
+  `litellm-deepwiki-hosted-agent` with:
+  - Target set to the public LiteLLM `/mcp` URL.
+  - Custom credential `x-litellm-api-key` set to a LiteLLM key whose object
+    permission contains only `deepwiki`.
+
+For this repository's environment, run
+[`scripts/create-foundry-litellm-connection.sh`](../scripts/create-foundry-litellm-connection.sh).
+It reads the key with hidden terminal input, creates the custom-key connection,
+and verifies it without requesting credentials from Foundry.
+
+[`azure.yaml`](azure.yaml) resolves the connection target into
+`LITELLM_MCP_URL` and the protected custom credential into
+`LITELLM_VIRTUAL_KEY` at runtime. The key is not stored in source, the deploy
+archive, or the ordinary azd environment file.
 
 Do not provision or deploy until the configuration and code have been
 reviewed. The middleware OBO client secret belongs only in the AKS middleware

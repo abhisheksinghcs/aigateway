@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: litellm-foundry-middleware
+  namespace: litellm
+  labels:
+    app.kubernetes.io/name: litellm-foundry-middleware
+    app.kubernetes.io/managed-by: containerization-assist
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm-foundry-middleware

@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Trusted OBO middleware for invoking a Microsoft Foundry hosted agent."
 requires-python = ">=3.12"
 dependencies = [
+  "aiohttp>=3.11,<4",
   "azure-identity>=1.19,<2",
   "fastapi>=0.115,<1",
   "httpx>=0.28,<1",

@@ -7,9 +7,9 @@ metadata:
     app.kubernetes.io/name: litellm-foundry-middleware
     app.kubernetes.io/managed-by: containerization-assist
 data:
-  MIDDLEWARE_TENANT_ID: ""
-  MIDDLEWARE_CLIENT_ID: ""
+  MIDDLEWARE_TENANT_ID: "e0ca6a1b-554d-4f12-87c9-92ec42abb750"
+  MIDDLEWARE_CLIENT_ID: "ec62ae2b-7954-482f-b89a-7b03c29fc7d5"
   MIDDLEWARE_REQUIRED_SCOPE: "access_as_user"
   MIDDLEWARE_DOWNSTREAM_SCOPE: "api://18f77e7f-8bf9-4f43-b014-e2168b6c5574/access_as_user"
-  MIDDLEWARE_FOUNDRY_RESPONSES_ENDPOINT: ""
+  MIDDLEWARE_FOUNDRY_RESPONSES_ENDPOINT: "https://Agent365-Teams-Agents.services.ai.azure.com/api/projects/Agent365-Teams-Agents/agents/litellm-deepwiki-agent/endpoint/protocols/openai/responses?api-version=v1"
   MIDDLEWARE_FOUNDRY_SCOPE: "https://ai.azure.com/.default"

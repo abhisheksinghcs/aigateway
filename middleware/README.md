@@ -268,3 +268,62 @@ The helper reads the value without terminal echo, keeps it out of command-line
 arguments and generated files, creates
 `litellm/litellm-foundry-middleware-secret`, and unsets the shell variable after
 `kubectl` applies the Secret.
+
+The POC image is built in Azure Container Registry because the local Docker
+daemon is not required. The Dockerfile forces the approved Microsoft Python
+package proxy and the Deployment uses the verified image digest rather than a
+mutable tag. Apply only the non-secret manifests after the live Secret exists:
+
+```bash
+kubectl apply \
+  --filename k8s/configmap.yaml \
+  --filename k8s/serviceaccount.yaml \
+  --filename k8s/service.yaml \
+  --filename k8s/deployment.yaml \
+  --filename k8s/pdb.yaml \
+  --filename k8s/networkpolicy.yaml \
+  --filename k8s/ingress.yaml
+
+kubectl rollout status \
+  deployment/litellm-foundry-middleware \
+  --namespace litellm \
+  --timeout 300s
+```
+
+Do not apply `k8s/secret.yaml`; it is deliberately non-deployable documentation.
+
+The public ingress exposes exactly one authenticated middleware route:
+
+```text
+https://litellm-agent365-mcp-d18f2ff3.eastus2.cloudapp.azure.com/agent/v1/responses
+```
+
+NGINX rewrites that exact path to the internal `/v1/responses` route. It does
+not expose middleware health endpoints or arbitrary `/agent/*` paths. The
+middleware reuses the existing TLS certificate and ingress controller; the
+network policy permits ingress-controller and node health-probe traffic plus
+DNS and HTTPS egress required for Entra, Foundry, and OpenID metadata.
+
+For an internal-only diagnostic test, keep a local port-forward open:
+
+```bash
+kubectl port-forward \
+  --namespace litellm \
+  service/litellm-foundry-middleware \
+  18000:80
+```
+
+Use the registered public CLI application for device-code sign-in and invoke
+the complete public HTTPS OBO path:
+
+```bash
+cd middleware
+.venv/bin/python ../scripts/test-foundry-middleware-obo.py --device-code
+```
+
+The test client keeps the access token in memory and prints only the hosted
+agent response. Device-code mode prints only Microsoft's short-lived sign-in
+code; it does not persist or display either the incoming user token or the
+delegated LiteLLM token. Pass `--middleware-url
+http://127.0.0.1:18000/v1/responses` only when intentionally testing through
+the local port-forward.

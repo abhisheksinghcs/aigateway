@@ -17,10 +17,10 @@ services:
             - ai-project
         env:
             DEEPWIKI_REPOSITORY: ${DEEPWIKI_REPOSITORY}
-            LITELLM_MCP_URL: ${LITELLM_MCP_URL}
-            LITELLM_VIRTUAL_KEY: ${LITELLM_VIRTUAL_KEY}
+            LITELLM_MCP_URL: $${{connections.litellm-deepwiki-hosted-agent.target}}
+            LITELLM_VIRTUAL_KEY: $${{connections.litellm-deepwiki-hosted-agent.credentials.x-litellm-api-key}}
         codeConfiguration:
-            dependencyResolution: remote_build
+            dependencyResolution: bundled
             entryPoint: main.py
             runtime: python_3_13
         container:

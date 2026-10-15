@@ -1,0 +1,19 @@
+# Local Python environments and generated caches are never deployment inputs.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Tests and development files are validated before packaging but not required
+# by the hosted runtime.
+tests/
+.env
+.env.*
+README.md
+
+# Code deploy uses Foundry's remote Python build, not the local Docker path.
+Dockerfile
+.dockerignore
