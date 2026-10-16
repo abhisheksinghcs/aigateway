@@ -71,7 +71,7 @@ sequenceDiagram
         LiteLLM->>DeepWiki: Call fixed tool with configured repository + question
         DeepWiki-->>LiteLLM: Grounded answer
     else Blocked
-        LiteLLM-->>Agent: MCP tool error; DeepWiki is not called
+        LiteLLM-->>Agent: MCP tool error - DeepWiki is not called
     end
     LiteLLM-->>Agent: MCP result
     Agent-->>Foundry: TextResponse
@@ -138,6 +138,11 @@ The AKS middleware's separate Workload Identity token for
 authenticates the middleware workload to Foundry and is normally found in the
 corresponding service-principal or workload-identity sign-in data.
 
+For the exact OIDC federation chain and the distinction between Kubernetes
+RBAC, Workload Identity authentication, Azure RBAC, and Entra delegated API
+permissions, see
+[AKS Workload Identity Federation](./foundry-middleware.md#aks-workload-identity-federation).
+
 ### Where Microsoft Agent Tools exists in this codebase
 
 `Agent Tools` is a Microsoft-owned API resource, not a local Python class or
@@ -163,6 +168,12 @@ authorizes the evaluation. Other Agent Tools scopes in the token, such as MCP
 server listing or publishing permissions, indicate additional delegated
 consent—typically for Tools Gateway discovery and management. Their presence
 does not mean the DeepWiki request exercised every permission.
+
+The OBO client is the existing dual-role `litellm` app registration, not a
+hidden identity created by the LiteLLM software. For its identifier URI,
+consented Agent Tools scopes, Kubernetes credential injection, and the Entra
+checks performed during token issuance, see
+[How LiteLLM Is Authorized for the Second OBO Exchange](./agent365-mcp-guardrail.md#how-litellm-is-authorized-for-the-second-obo-exchange).
 
 ### Claims and sign-in metadata
 

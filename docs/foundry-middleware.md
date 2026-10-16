@@ -87,6 +87,86 @@ The middleware uses two identity mechanisms:
 Keeping these identities separate prevents the OBO credential from also being
 the Azure workload identity used to invoke Foundry.
 
+### AKS Workload Identity Federation
+
+Workload Identity federation is an authentication trust between the AKS OIDC
+issuer, one Kubernetes ServiceAccount, and one Microsoft Entra managed
+identity. It is **not** federation between Kubernetes RBAC and Azure RBAC.
+
+The deployed trust is:
+
+| Federation field | Deployed value | Meaning |
+| --- | --- | --- |
+| Issuer | The OIDC issuer URL of `litellm-demo-aks` | The only token issuer Entra trusts for this federation |
+| Subject | `system:serviceaccount:litellm:litellm-foundry-middleware` | The exact namespace and ServiceAccount allowed to represent the identity |
+| Audience | `api://AzureADTokenExchange` | Marks the projected token as intended for Entra token exchange |
+| Managed identity client ID | `22bd8dab-f5da-40a3-ab55-8afb10f5aeaf` | The Azure identity the pod is allowed to represent |
+
+The relationship is created in
+[`infra/modules/federation.bicep`](../infra/modules/federation.bicep). The
+ServiceAccount selects the managed identity through the
+`azure.workload.identity/client-id` annotation in
+[`middleware/k8s/serviceaccount.yaml`](../middleware/k8s/serviceaccount.yaml),
+and the pod opts into mutation through the
+`azure.workload.identity/use: "true"` label in
+[`middleware/k8s/deployment.yaml`](../middleware/k8s/deployment.yaml).
+
+```text
+Middleware pod
+  │ uses ServiceAccount litellm/litellm-foundry-middleware
+  ▼
+AKS OIDC issuer
+  │ signs a short-lived projected ServiceAccount token
+  ▼
+Entra federated identity credential
+  │ verifies issuer + subject + audience
+  ▼
+User-assigned managed identity
+  │ requests https://ai.azure.com/.default
+  ▼
+Foundry workload access token
+```
+
+The AKS Workload Identity webhook projects the ServiceAccount token into the
+pod and injects `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and
+`AZURE_FEDERATED_TOKEN_FILE`. `DefaultAzureCredential` in
+[`foundry.py`](../middleware/src/foundry_middleware/foundry.py) detects those
+values and exchanges the projected token for a Foundry access token. No
+managed-identity client secret is stored in Kubernetes.
+
+Federation answers only:
+
+> May this exact Kubernetes ServiceAccount authenticate as this managed
+> identity?
+
+Authorization is evaluated separately:
+
+| Control system | What it authorizes in this deployment |
+| --- | --- |
+| Kubernetes RBAC | Access to Kubernetes API objects; it does not grant access to Foundry |
+| Workload Identity federation | Authentication from the ServiceAccount to the managed identity; it does not by itself grant Foundry permissions |
+| Azure RBAC | The managed identity's access to the Foundry project |
+| Entra delegated API permissions | The app-registration OBO path from the user to middleware and then LiteLLM |
+
+Azure RBAC grants the managed identity, principal ID
+`2f363acc-8959-4342-95ba-08ddc36e4669`, two project-scoped roles:
+
+- **Foundry Agent Consumer** permits hosted-agent invocation.
+- **Foundry Agent User Identity Impersonation** permits the trusted middleware
+  to submit the validated `x-ms-user-identity` value.
+
+Those assignments are defined in
+[`infra/modules/middleware-foundry-access.bicep`](../infra/modules/middleware-foundry-access.bicep).
+They appear under the Foundry project's **Access control (IAM)** page, not
+under the middleware app registration's **API permissions** page.
+
+The security boundary depends on all three exact matches: the pod must use the
+annotated ServiceAccount, the projected token must match the federated
+credential, and the resulting managed identity must have the required
+project-scoped Azure roles. Changing a namespace or ServiceAccount name breaks
+the federation until the credential is updated; granting Kubernetes RBAC alone
+cannot repair or replace it.
+
 ## Customer Deployment Model
 
 Customers do not recreate the middleware Python files for each hosted-agent

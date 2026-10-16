@@ -71,7 +71,7 @@ sequenceDiagram
         DeepWiki-->>LiteLLM: Tool result
         LiteLLM-->>Client: Tool result
     else Blocked or not evaluated
-        LiteLLM-->>Client: Refusal; DeepWiki is not called
+        LiteLLM-->>Client: Refusal - DeepWiki is not called
     end
 ```
 
@@ -104,6 +104,131 @@ access_as_user
 
 The Copilot agent does not invent or self-sign this token. The Copilot Studio
 connection and Microsoft Entra ID produce it after the user authenticates.
+
+## How LiteLLM Is Authorized for the Second OBO Exchange
+
+LiteLLM does not create an Agent Tools token without an Entra application. The
+deployment uses the existing single-tenant app registration:
+
+```text
+Display name:   litellm
+Client ID:      18f77e7f-8bf9-4f43-b014-e2168b6c5574
+Identifier URI: api://18f77e7f-8bf9-4f43-b014-e2168b6c5574
+```
+
+This registration has two roles in the same flow:
+
+| Role | What the `litellm` registration does |
+| --- | --- |
+| Resource API | Exposes `access_as_user` and accepts the middleware's delegated token whose `aud` is the LiteLLM identifier URI |
+| OAuth confidential client | Authenticates with its client ID and credential, submits that incoming token as an OBO assertion, and requests a delegated Agent Tools token |
+
+An Entra app registration can both expose its own API and request delegated
+permissions to another API. No additional app registration is required for
+the second OBO hop.
+
+```text
+Middleware
+  │ delegated token: aud = LiteLLM, scp = access_as_user
+  ▼
+LiteLLM resource API and OBO client
+  │ client ID + client credential + incoming user assertion
+  ▼
+Microsoft Entra ID
+  │ verifies application, assertion, consent, and policy
+  ▼
+Agent Tools token
+    aud = ea9ffc3e-8a23-4a7d-836d-234d7c7565c1
+    scp includes ThreatProtection.Evaluate.All
+    oid identifies the same represented user
+    azp/appid identifies the LiteLLM client
+```
+
+### Configured and consented permissions
+
+The `litellm` registration currently declares these delegated Agent Tools
+permissions:
+
+- `AgentTools.AgentBluePrint.Create`
+- `AgentTools.AgentBluePrint.Delete`
+- `AgentTools.ListDataverseEnvironments.All`
+- `AgentTools.ListMCPServers.All`
+- `AgentTools.MOSEvents.All`
+- `AgentTools.PublishMCPServer.All`
+- `AgentTools.UnpublishMCPServer.All`
+- `ThreatProtection.Evaluate.All`
+
+The tenant has an `AllPrincipals` delegated consent grant for those scopes. For
+the runtime `pre_mcp_call` guardrail, `ThreatProtection.Evaluate.All` is the
+permission that authorizes the allow/block evaluation. The other scopes
+support broader Agent Tools discovery, publishing, and management features;
+their presence in a token does not mean every scope was exercised by the
+current DeepWiki request.
+
+Configuring a permission and granting consent are separate operations:
+
+1. **API permissions** on the app registration declare what LiteLLM may ask
+   for.
+2. **Admin consent** on the enterprise application authorizes those delegated
+   scopes for tenant users.
+3. **OBO token issuance** happens per user assertion and remains subject to
+   Conditional Access and other tenant policy.
+
+### How the app credential reaches LiteLLM
+
+The guardrail reads its confidential-client settings from environment
+variables in [`litellm/config.yaml`](../litellm/config.yaml):
+
+```yaml
+tenant_id: os.environ/AGENT365_TENANT_ID
+client_id: os.environ/AGENT365_CLIENT_ID
+client_secret: os.environ/AGENT365_CLIENT_SECRET
+```
+
+The Helm deployment imports those values from the Kubernetes Secret
+`litellm/litellm-agent365`, configured through
+[`kubernetes/values.yaml`](../kubernetes/values.yaml). The Secret contains
+these keys:
+
+```text
+AGENT365_TENANT_ID
+AGENT365_CLIENT_ID
+AGENT365_CLIENT_SECRET
+```
+
+The client ID selects the `litellm` registration. The secret proves the
+LiteLLM workload is allowed to act as that confidential client. The secret is
+not a user token, LiteLLM virtual key, middleware OBO credential, or AKS
+Workload Identity token. Its value must remain outside source control and is
+injected with
+[`scripts/configure-agent365-secret.sh`](../scripts/configure-agent365-secret.sh).
+
+### What Entra verifies
+
+During the second OBO exchange, Entra verifies:
+
+1. The client ID and credential authenticate the `litellm` application.
+2. The incoming assertion is a valid delegated user token issued for LiteLLM.
+3. The assertion identifies a user and contains LiteLLM's `access_as_user`
+   scope.
+4. The LiteLLM service principal has delegated Agent Tools permissions.
+5. Tenant-wide consent covers the requested downstream scope.
+6. Conditional Access and other user policies permit token issuance.
+
+Only then does Entra issue a new, audience-restricted Agent Tools token for the
+same represented user. The incoming LiteLLM token cannot be sent directly to
+Agent Tools because its `aud` identifies LiteLLM, not Agent Tools.
+
+The Defender sign-in sequence corroborates this boundary:
+
+```text
+App:      litellm
+Resource: Agent Tools
+```
+
+That row records the `litellm` confidential client acquiring the delegated
+Agent Tools token; it is not evidence of a hidden or automatically generated
+application.
 
 ## Connect LiteLLM to the Agent 365 Tools Gateway
 
