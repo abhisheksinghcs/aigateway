@@ -18,6 +18,13 @@ Standalone high-resolution PNGs are available for presentations and documents:
   (`4768 × 2630`)
 - [Download the hosted-agent code-flow PNG](./diagrams/hosted-agent-code-flow.png)
   (`4502 × 2782`)
+- [Download the Agent Tools end-to-end token-flow PNG](./diagrams/agent-tools-end-to-end-token-flow.png)
+  (`768 × 1152`)
+
+The following compact view includes the additional Agent 365 evaluation hop
+that occurs after the hosted agent reaches LiteLLM:
+
+![End-to-end delegated flow through Microsoft Agent Tools](./diagrams/agent-tools-end-to-end-token-flow.png)
 
 ## 1. User interaction and delegated token flow
 
@@ -30,6 +37,7 @@ sequenceDiagram
     participant Foundry as Microsoft Foundry
     participant Agent as Hosted agent<br/>main.py · agent.py · auth.py · deepwiki.py
     participant LiteLLM as LiteLLM MCP gateway
+    participant AgentTools as Microsoft Agent Tools<br/>Agent 365 / Defender
     participant DeepWiki as DeepWiki MCP
 
     User->>Client: Sign in and ask a repository question
@@ -54,10 +62,18 @@ sequenceDiagram
     Note over Agent: main.py receives the request<br/>agent.py validates question flow<br/>auth.py extracts the raw delegated token
     Agent->>LiteLLM: Step 6 — deepwiki.py calls fixed /mcp endpoint<br/>Authorization = Bearer delegated token<br/>x-litellm-api-key = DeepWiki-only virtual key<br/>tool = deepwiki-ask_wiki_question
 
-    Note over LiteLLM: Validate virtual-key permission<br/>and Agent 365 delegated-user guardrail
-    LiteLLM->>DeepWiki: Call fixed tool with configured repository + question
-    DeepWiki-->>LiteLLM: Grounded answer
-    LiteLLM-->>Agent: MCP text result
+    Note over LiteLLM: Validate delegated token and<br/>DeepWiki-only virtual-key permission
+    LiteLLM->>Entra: Agent 365 guardrail OBO exchange<br/>using delegated LiteLLM user token
+    Entra-->>LiteLLM: Delegated Agent Tools token<br/>scp includes ThreatProtection.Evaluate.All
+    LiteLLM->>AgentTools: Evaluate pending MCP tool call
+    AgentTools-->>LiteLLM: Allow or Block
+    alt Allowed
+        LiteLLM->>DeepWiki: Call fixed tool with configured repository + question
+        DeepWiki-->>LiteLLM: Grounded answer
+    else Blocked
+        LiteLLM-->>Agent: MCP tool error; DeepWiki is not called
+    end
+    LiteLLM-->>Agent: MCP result
     Agent-->>Foundry: TextResponse
     Foundry-->>Client: Responses protocol result
     Client-->>User: Display the answer
@@ -101,6 +117,74 @@ The hosted agent adds a fourth credential only on its outbound LiteLLM call:
 the internal `x-litellm-api-key`. That key represents the application and is
 restricted to the `deepwiki` MCP server. It never comes from the user or
 middleware request.
+
+### Observed Entra sign-in sequence
+
+The Defender `NonInteractiveUserSignInLogs` evidence for this deployment
+separates into three delegated token-acquisition legs:
+
+| Client application | Target resource | Important token claims | Repository boundary |
+| --- | --- | --- | --- |
+| `litellm-foundry-cli-client` (`ff46988d-29af-44ca-8b66-f252e5f5388f`) | `litellm-foundry-middleware-api` (`ec62ae2b-7954-482f-b89a-7b03c29fc7d5`) | `aud` identifies the middleware API; `scp` contains `access_as_user`; `oid` identifies the user | The client obtains the token; [`auth.py`](../middleware/src/foundry_middleware/auth.py) validates it |
+| `litellm-foundry-middleware-api` | `litellm` (`18f77e7f-8bf9-4f43-b014-e2168b6c5574`) | A new `aud` identifies LiteLLM; `scp` again contains `access_as_user`; the represented user's `oid` is preserved | [`obo.py`](../middleware/src/foundry_middleware/obo.py) performs OBO; [`foundry.py`](../middleware/src/foundry_middleware/foundry.py) forwards the token |
+| `litellm` | Microsoft `Agent Tools` (`ea9ffc3e-8a23-4a7d-836d-234d7c7565c1`) | `aud` identifies Agent Tools; `scp` includes `ThreatProtection.Evaluate.All` and any other consented Agent Tools delegated permissions | LiteLLM's installed `agent_365` guardrail performs this OBO exchange; this repository enables it in [`litellm/config.yaml`](../litellm/config.yaml) |
+
+These rows record token acquisitions, not individual MCP requests. MSAL and
+LiteLLM cache OBO tokens, so row counts and timestamps do not need to align
+one-for-one with tool-call logs.
+
+The AKS middleware's separate Workload Identity token for
+`https://ai.azure.com/.default` is not part of this user-delegation table. It
+authenticates the middleware workload to Foundry and is normally found in the
+corresponding service-principal or workload-identity sign-in data.
+
+### Where Microsoft Agent Tools exists in this codebase
+
+`Agent Tools` is a Microsoft-owned API resource, not a local Python class or
+Kubernetes service. The repository activates the integration through:
+
+```yaml
+guardrails:
+  - guardrail_name: agent365-mcp
+    litellm_params:
+      guardrail: agent_365
+      mode: pre_mcp_call
+      default_on: true
+```
+
+LiteLLM's installed guardrail implementation reads the delegated user token
+from `Authorization`, exchanges it OBO for an Agent Tools token, and submits
+the pending MCP server, tool, and arguments for evaluation. Only an **Allow**
+result permits the DeepWiki call. A **Block** result returns an MCP error and
+DeepWiki is never contacted.
+
+For this runtime path, `ThreatProtection.Evaluate.All` is the permission that
+authorizes the evaluation. Other Agent Tools scopes in the token, such as MCP
+server listing or publishing permissions, indicate additional delegated
+consent—typically for Tools Gateway discovery and management. Their presence
+does not mean the DeepWiki request exercised every permission.
+
+### Claims and sign-in metadata
+
+| Field | Role in this flow |
+| --- | --- |
+| `aud` | Names the API allowed to accept that token; it changes at each OBO boundary |
+| `scp` | Lists delegated operations the client may perform as the represented user |
+| `oid` | Stable Entra object ID of the represented user |
+| `sub` | User subject scoped to the target application |
+| `tid` | Tenant that issued the token |
+| `appid` or `azp` | Client application that requested the token |
+| `iss` | Entra issuer whose signature and tenant are trusted |
+| `exp` and `nbf` | Token validity window |
+| Sign-in-log `Agent` value | Classification metadata, not an authorization claim consumed by this code |
+
+The observed sign-in-log classification
+`{"agentType":"notAgentic","agentSubjectType":"notAgentic"}` is expected. The
+CLI, middleware, and LiteLLM are conventional public or confidential
+applications performing delegated user OBO. No repository code reads those
+classification fields, and they do not disable the Agent 365 evaluation. The
+Agent Tools audience and `ThreatProtection.Evaluate.All` scope are the evidence
+that the Microsoft evaluation boundary participated.
 
 ## 2. Hosted-agent file and data flow
 
