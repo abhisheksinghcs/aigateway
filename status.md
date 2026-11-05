@@ -1,10 +1,20 @@
 # AI Gateway Lab Status
 
-Last updated: 2026-10-16 13:20 EDT
+Last updated: 2026-11-05 18:12 UTC
 
 ## Current State
 
-The approved POC is deployed and healthy in `eastus2`. Both AKS workers are Ready, PostgreSQL and LiteLLM are Ready, and public route validation passes. Azure Resource Health classified the latest unexplained stops as `UserInitiated` by an authorized user or process, but the initiating actor remains unknown. A guarded Azure Monitor and Logic App workflow is now enabled to make one delayed recovery attempt when nodes stop reporting or become NotReady.
+The approved POC is running in `eastus2` following the explicitly approved recovery on 2026-11-05. AKS `litellm-demo-aks` reports `Running` with provisioning state `Succeeded`; both `Standard_D4as_v6` worker VMs are running and both nodes are Ready. LiteLLM 1/1, middleware 2/2, PostgreSQL 1/1, and both ingress controllers are Ready. The PostgreSQL 8 Gi PVC remains Bound. Public LiteLLM and middleware routes respond over trusted HTTPS and require authentication. The guarded node auto-recovery Logic App remains `Disabled`, unchanged by this recovery. Worker compute charges have resumed.
+
+## Recovery: 2026-11-05
+
+- Initial live checks found AKS reporting Running/Succeeded but both worker instances `8` and `9` in `aks-system-18292702-vmss` were `PowerState/deallocated`. Both Kubernetes nodes were NotReady, PostgreSQL was Pending, and the public endpoint timed out.
+- With explicit user approval, started only those two existing VMSS instances. Both reached `PowerState/running` and both nodes became Ready.
+- After the Workload Identity webhook recovered, restarted the LiteLLM and middleware Deployments to clear their failed webhook admission backoff. Both rollouts completed successfully; PostgreSQL and ingress recovered without manual changes.
+- Verified LiteLLM `/health/readiness` and middleware `/readyz` internally with HTTP 200. A real `customer-chat` inference returned HTTP 200 and exactly `LiteLLM gateway path verified.` The master key was used only inside the existing LiteLLM container and was not displayed or persisted.
+- Public `/mcp` and unauthenticated POST `/agent/v1/responses` return HTTP 401. Public `/ui`, `/v1`, and `/readyz` return ingress HTTP 404. TLS verification succeeded.
+- The initiating cause of deallocation remains unconfirmed. A ten-day managed-resource-group Activity Log query (up to 100 events) returned no matching deallocate/power-off operations; this limited result does not establish who or what stopped the VMs. The previous intentional-shutdown note above was stale relative to live cluster state.
+- No RBAC, Helm, infrastructure configuration, or auto-recovery workflow changes were made. Full delegated middleware-to-Foundry OBO testing was not repeated.
 
 ## Azure Context
 
@@ -256,6 +266,31 @@ The approved POC is deployed and healthy in `eastus2`. Both AKS workers are Read
 - The first Mermaid sequence in `docs/foundry-obo-flow.md` is compatible with the repository viewer's Mermaid 10.8.0 parser. A semicolon inside the blocked-branch message had been interpreted as a statement separator; replacing it with a hyphen resolves the syntax error. Both Mermaid blocks pass direct Mermaid 10.8.0 parsing.
 - `docs/foundry-middleware.md` now documents the complete AKS Workload Identity federation chain. It clarifies that federation is an OIDC authentication trust between the AKS issuer, the exact `litellm/litellm-foundry-middleware` ServiceAccount, and the dedicated managed identity—not a federation between Kubernetes RBAC and Azure RBAC. The guide separates Kubernetes RBAC, federation, Azure RBAC, and Entra delegated API permissions and maps the live identity, project-scoped Foundry roles, manifests, Bicep modules, and `DefaultAzureCredential` behavior.
 - `docs/agent365-mcp-guardrail.md` now explains how the existing `litellm` app registration acts as both the LiteLLM resource API and the confidential OBO client for Microsoft Agent Tools. It records the live identifier URI, configured and tenant-consented delegated Agent Tools scopes, Kubernetes Secret key wiring, Entra validation sequence, second-token claims, and sign-in evidence without exposing credential values. `docs/foundry-obo-flow.md` links to the customer-facing explanation.
+- On 2026-10-20, the user approved pausing AKS to minimize idle cost. Scaling application replicas to zero was rejected as ineffective for node cost because the cluster has one fixed two-node system pool, cluster autoscaler is disabled, and system/ingress workloads still require nodes. Preflight confirmed the PostgreSQL PVC `data-litellm-postgresql-0` was Bound at 8 Gi and desired replicas were preserved. The `litellm-aks-node-auto-recovery` Logic App was disabled first, then `az aks stop` completed with AKS `Stopped/Succeeded`, VMSS capacity `0`, and zero VMSS instances. No Kubernetes replica declarations were changed.
+
+### Resume the paused AKS environment
+
+Start the cluster before attempting any `kubectl` or endpoint validation:
+
+```bash
+az aks start \
+  --subscription MultiCloudTeam \
+  --resource-group rg-litellm-gateway-demo-eus2 \
+  --name litellm-demo-aks
+```
+
+After AKS reports `Running/Succeeded`, verify nodes, PostgreSQL, LiteLLM, the
+middleware rollout, and public routes. Re-enable auto-recovery only after the
+cluster is healthy:
+
+```bash
+az resource update \
+  --subscription MultiCloudTeam \
+  --resource-group rg-litellm-gateway-demo-eus2 \
+  --resource-type Microsoft.Logic/workflows \
+  --name litellm-aks-node-auto-recovery \
+  --set properties.state=Enabled
+```
 - `auth.py` now labels the three validation stages inline and explains each `jwt.decode` control: signing key, pinned algorithm, middleware audience, tenant issuer, clock skew, and required claims. It also annotates tenant, `oid`, subject, and delegated-scope enforcement, while `app.py` identifies the validation call that must succeed before OBO.
 - The same staged annotation theme now covers the remaining production modules: configuration sources and normalization in `config.py`; confidential-client binding, audience exchange, success/failure handling, and Conditional Access in `obo.py`; workload identity, fixed destinations, distinct header roles, and response sanitization in `foundry.py`; request restrictions in `models.py`; and startup, health, authentication, orchestration, and error translation in `app.py`.
 - JWKS refresh behavior was reviewed while explaining `time.monotonic()`. A cache-guard bug was found where an unfamiliar `kid` could request refresh but the still-current cache caused `_refresh_keys` to return without fetching the rotated key. The implementation now distinguishes ordinary expiry from required-key refresh, rechecks after acquiring the lock, and rate-limits unknown-key refreshes with a configurable 60-second cooldown. A synthetic RSA key-rotation test covers this path.

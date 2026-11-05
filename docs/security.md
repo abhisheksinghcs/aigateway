@@ -12,6 +12,27 @@ For the proposed Agent 365 MCP guardrail, the delegated user Entra token and Lit
 
 Environment-credential login to the Admin UI is disabled after two database-backed `proxy_admin` users with passwords were verified and a personal administrator login succeeded. The master key remains available for authenticated management API recovery but is rejected by the UI login form.
 
+For an approved administrator password reset, run:
+
+```bash
+bash scripts/reset-admin-password.sh <admin-email>
+```
+
+The helper targets `litellm-demo-aks`, prompts for a temporary password without
+echoing it, and uses the master key only inside the existing LiteLLM container.
+It updates only the matching administrator's password through `/user/update`;
+it does not change roles, API keys, or environment-login restrictions. LiteLLM
+requires another password change at the next login. Use the private Admin UI
+through `kubectl --context litellm-demo-aks -n litellm port-forward service/litellm 4000:4000`
+and open `http://localhost:4000/ui`.
+
+The installed default password policy requires at least 12 characters,
+uppercase and lowercase letters, a number, and a special character. Known
+breached passwords are also rejected. The helper displays recognized
+password-policy errors but withholds other response bodies to avoid exposing
+credentials. A policy rejection requires a different password, not a database
+restore or a change to login restrictions.
+
 ### Copilot Studio OAuth Identity
 
 The POC permits the existing gateway Entra application to act as both the
